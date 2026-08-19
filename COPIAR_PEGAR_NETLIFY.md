@@ -178,14 +178,26 @@ Deploys -> Trigger deploy -> Deploy site
 Abre:
 
 ```text
-https://TU-SITIO.netlify.app/health
+https://botinventariodc.netlify.app/health
 ```
 
-Debe responder:
+Debe responder con `status: "ok"` y con estos valores en `true`:
 
 ```json
-{"status":"ok","service":"discord-guild-inventory-netlify"}
+"applicationIdConfigured": true,
+"tokenConfigured": true,
+"publicKeyConfigured": true,
+"publicKeyValidShape": true,
+"urlConfigured": true
 ```
+
+Comprueba también que el endpoint rechaza peticiones sin firma:
+
+```powershell
+curl.exe -i -X POST "https://botinventariodc.netlify.app/discord-interactions" -H "Content-Type: application/json" --data '{"type":1}'
+```
+
+Debe devolver `401 invalid request signature`. Eso es correcto.
 
 ## 8. Discord Interactions Endpoint
 
@@ -198,7 +210,7 @@ General Information -> Interactions Endpoint URL
 Pega:
 
 ```text
-https://TU-SITIO.netlify.app/discord-interactions
+https://botinventariodc.netlify.app/discord-interactions
 ```
 
 Guarda.

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { COMMANDS } from "../../src/netlify/commands.mjs";
 import { hasInventoryAdminPermission } from "../../src/netlify/permissions.mjs";
+import { handler as healthHandler } from "../../netlify/functions/health.mjs";
 import { handler as inviteHandler } from "../../netlify/functions/invite.mjs";
 
 test("registers the expected slash command names", () => {
@@ -39,4 +40,23 @@ test("invite function redirects to Discord OAuth install URL", async () => {
   assert.match(response.headers.location, /discord\.com\/oauth2\/authorize/);
   assert.match(response.headers.location, /client_id=1234567890/);
   assert.match(response.headers.location, /permissions=84992/);
+});
+
+test("health function reports configuration shape without exposing secrets", async () => {
+  process.env.DISCORD_APPLICATION_ID = "1234567890";
+  process.env.DISCORD_TOKEN = "secret-token";
+  process.env.DISCORD_PUBLIC_KEY = "a".repeat(64);
+  process.env.DATABASE_URL = "postgresql://user:pass@example.com/db";
+
+  const response = await healthHandler();
+  const payload = JSON.parse(response.body);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(payload.discord.applicationIdConfigured, true);
+  assert.equal(payload.discord.tokenConfigured, true);
+  assert.equal(payload.discord.publicKeyConfigured, true);
+  assert.equal(payload.discord.publicKeyValidShape, true);
+  assert.equal(payload.database.urlConfigured, true);
+  assert.equal(JSON.stringify(payload).includes("secret-token"), false);
+  assert.equal(JSON.stringify(payload).includes("postgresql://"), false);
 });

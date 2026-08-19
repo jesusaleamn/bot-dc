@@ -14,7 +14,7 @@ Tú mandas una página de Netlify
 La página tendrá:
 
 ```text
-https://TU-SITIO.netlify.app
+https://botinventariodc.netlify.app
 ```
 
 Y el botón de instalación usará:
@@ -203,13 +203,28 @@ Permisos necesarios
 Prueba también:
 
 ```text
-https://TU-SITIO.netlify.app/health
+https://botinventariodc.netlify.app/health
 ```
+
+En `/health`, revisa que salga:
+
+```json
+"publicKeyConfigured": true,
+"publicKeyValidShape": true
+```
+
+También puedes comprobar que el endpoint de Discord existe y valida firmas:
+
+```powershell
+curl.exe -i -X POST "https://botinventariodc.netlify.app/discord-interactions" -H "Content-Type: application/json" --data '{"type":1}'
+```
+
+Debe devolver `401 invalid request signature`. Eso es correcto: significa que la función existe y rechaza peticiones sin firma de Discord.
 
 Y:
 
 ```text
-https://TU-SITIO.netlify.app/invite
+https://botinventariodc.netlify.app/invite
 ```
 
 `/invite` debe llevarte a Discord para invitar el bot.
@@ -225,7 +240,7 @@ General Information -> Interactions Endpoint URL
 Pega:
 
 ```text
-https://TU-SITIO.netlify.app/discord-interactions
+https://botinventariodc.netlify.app/discord-interactions
 ```
 
 Guarda.

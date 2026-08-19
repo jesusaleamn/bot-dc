@@ -9,16 +9,19 @@
   from = "/health"
   to = "/.netlify/functions/health"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/discord-interactions"
   to = "/.netlify/functions/discord-interactions"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/invite"
   to = "/.netlify/functions/invite"
   status = 200
+  force = true
 
 [template.environment]
   DISCORD_TOKEN = "Token del bot de Discord"

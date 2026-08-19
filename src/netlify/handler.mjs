@@ -1,4 +1,4 @@
-import { getRawBody, verifyDiscordSignature } from "./security.mjs";
+import { getDiscordPublicKeyStatus, getRawBody, verifyDiscordSignature } from "./security.mjs";
 import { InteractionType } from "./constants.mjs";
 import { ADMIN_COMMANDS } from "./commands.mjs";
 import { hasInventoryAdminPermission } from "./permissions.mjs";
@@ -22,6 +22,11 @@ import { InventoryError, InventoryMessageMissingError } from "./errors.mjs";
 export async function handleDiscordInteraction(event) {
   if (event.httpMethod !== "POST") {
     return httpJson(405, { error: "method_not_allowed" });
+  }
+
+  const publicKeyStatus = getDiscordPublicKeyStatus(process.env.DISCORD_PUBLIC_KEY);
+  if (!publicKeyStatus.valid) {
+    console.error("DISCORD_PUBLIC_KEY is not configured correctly", publicKeyStatus);
   }
 
   if (!verifyDiscordSignature(event, process.env.DISCORD_PUBLIC_KEY)) {
@@ -333,4 +338,3 @@ function formatChange(entry) {
   }
   return "";
 }
-

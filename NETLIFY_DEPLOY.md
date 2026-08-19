@@ -262,20 +262,32 @@ https://tu-sitio.netlify.app
 Prueba:
 
 ```text
-https://tu-sitio.netlify.app/health
+https://botinventariodc.netlify.app/health
 ```
 
-Debe devolver algo parecido a:
+Debe devolver `status: "ok"` y confirmar que las variables necesarias tienen forma correcta:
 
 ```json
-{"status":"ok","service":"discord-guild-inventory-netlify"}
+"applicationIdConfigured": true,
+"tokenConfigured": true,
+"publicKeyConfigured": true,
+"publicKeyValidShape": true,
+"urlConfigured": true
 ```
 
 El endpoint de Discord será:
 
 ```text
-https://tu-sitio.netlify.app/discord-interactions
+https://botinventariodc.netlify.app/discord-interactions
 ```
+
+Antes de guardar en Discord, comprueba que la ruta existe y valida firmas:
+
+```powershell
+curl.exe -i -X POST "https://botinventariodc.netlify.app/discord-interactions" -H "Content-Type: application/json" --data '{"type":1}'
+```
+
+Debe devolver `401 invalid request signature`. Eso es correcto porque esa petición no viene firmada por Discord.
 
 ## Paso 7: Configurar Interactions Endpoint URL en Discord
 
@@ -287,7 +299,7 @@ En Discord Developer Portal:
 4. Pega:
 
    ```text
-   https://tu-sitio.netlify.app/discord-interactions
+   https://botinventariodc.netlify.app/discord-interactions
    ```
 
 5. Guarda.
@@ -495,4 +507,3 @@ Para bot online 24/7 con presencia real:
 ```text
 VPS + bot Python/Docker + PostgreSQL
 ```
-
