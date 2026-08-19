@@ -1,0 +1,26 @@
+{
+  "name": "discord-guild-inventory-netlify",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Discord guild inventory bot using Netlify Functions and PostgreSQL.",
+  "scripts": {
+    "prepare:netlify": "node scripts/prepare-netlify-local.mjs",
+    "register:commands": "node scripts/register-commands.mjs",
+    "register:commands:local": "node --env-file=.env.netlify.local scripts/register-commands.mjs",
+    "netlify:login": "npx --yes netlify-cli login",
+    "netlify:create": "npx --yes netlify-cli sites:create",
+    "netlify:env:import": "npx --yes netlify-cli env:import .env.netlify.local",
+    "netlify:deploy:draft": "npx --yes netlify-cli deploy",
+    "netlify:deploy:prod": "npx --yes netlify-cli deploy --prod",
+    "test:netlify": "node --test tests/netlify/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {}
+}

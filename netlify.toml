@@ -1,0 +1,23 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+[[redirects]]
+  from = "/discord-interactions"
+  to = "/.netlify/functions/discord-interactions"
+  status = 200
+
+[template.environment]
+  DISCORD_TOKEN = "Token del bot de Discord"
+  DISCORD_APPLICATION_ID = "Application ID de Discord"
+  DISCORD_PUBLIC_KEY = "Public Key de Discord"
+  DATABASE_URL = "Connection string de Neon PostgreSQL"
+  DISCORD_GUILD_ID = "ID opcional del servidor de Discord para pruebas"

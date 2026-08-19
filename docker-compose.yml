@@ -1,0 +1,34 @@
+services:
+  bot:
+    build: .
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?Define DISCORD_TOKEN en .env}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://inventory:inventory_password@db:5432/inventory_bot}
+      COMMAND_GUILD_ID: ${COMMAND_GUILD_ID:-}
+      SYNC_COMMANDS: ${SYNC_COMMANDS:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - bot_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventory_bot
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: inventory_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory -d inventory_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  bot_data:
