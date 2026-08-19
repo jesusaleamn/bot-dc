@@ -56,8 +56,8 @@ Ruta recomendada, la más fácil para compartir e instalar: [GUIA_FACIL_GITHUB_N
    ```text
    /inventario nombre:Alquimia
    /crear id:1 nombre:Flor de montaña cantidad:50
-   /sumar id:1
-   /restar id:1
+   /sumar id:1 cantidad:101
+   /restar id:1 cantidad:10
    ```
 
 El mensaje permanente del inventario se actualizará en el canal. Las respuestas de `/sumar` y `/restar` serán efímeras.
@@ -151,8 +151,8 @@ Por eso este bot usa:
 Usuarios normales:
 
 ```text
-/sumar id:1
-/restar id:1
+/sumar id:1 cantidad:101
+/restar id:1 cantidad:10
 /ver
 /ayuda
 ```
@@ -206,7 +206,7 @@ ID │ MATERIAL                 │ CANTIDAD
 Luego:
 
 ```text
-/sumar id:1
+/sumar id:1 cantidad:20
 ```
 
 Resultado:
@@ -218,7 +218,7 @@ Resultado:
 Y:
 
 ```text
-/restar id:1
+/restar id:1 cantidad:10
 ```
 
 Resultado:
@@ -248,7 +248,7 @@ ID 1 = Leña = 100
 Si ejecutas esto en `#almacen-leñadores`:
 
 ```text
-/sumar id:1
+/sumar id:1 cantidad:20
 ```
 
 El resultado será:

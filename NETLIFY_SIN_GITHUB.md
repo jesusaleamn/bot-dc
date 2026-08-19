@@ -158,8 +158,8 @@ En `#almacen-alquimia`:
 ```text
 /inventario nombre:Alquimia
 /crear id:1 nombre:Flor de montaña cantidad:50
-/sumar id:1
-/restar id:1
+/sumar id:1 cantidad:101
+/restar id:1 cantidad:10
 ```
 
 ## Para actualizar el bot después

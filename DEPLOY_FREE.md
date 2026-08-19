@@ -133,8 +133,8 @@ En `#almacen-alquimia`:
 ```text
 /inventario nombre:Alquimia
 /crear id:1 nombre:Flor de montaña cantidad:50
-/sumar id:1
-/restar id:1
+/sumar id:1 cantidad:101
+/restar id:1 cantidad:10
 ```
 
 Resultado esperado:
@@ -148,7 +148,7 @@ En otro canal, por ejemplo `#almacen-leñadores`:
 ```text
 /inventario nombre:Leñadores
 /crear id:1 nombre:Leña cantidad:100
-/sumar id:1
+/sumar id:1 cantidad:20
 ```
 
 Resultado esperado:

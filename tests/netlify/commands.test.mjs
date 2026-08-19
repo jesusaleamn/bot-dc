@@ -32,16 +32,15 @@ test("registers the expected slash command names", () => {
   );
 });
 
-test("sumar and restar can be used with only id", () => {
+test("sumar and restar can be used with only id or any positive amount", () => {
   for (const commandName of ["sumar", "restar"]) {
     const command = commandByName(commandName);
     const amount = optionByName(command, "cantidad");
 
     assert.equal(amount.required, false);
-    assert.deepEqual(
-      amount.choices.map((choice) => choice.value),
-      [1, 5, 10],
-    );
+    assert.equal(amount.min_value, 1);
+    assert.equal(amount.max_value, 2147483647);
+    assert.equal("choices" in amount, false);
   }
 });
 
