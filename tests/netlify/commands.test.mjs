@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { COMMANDS } from "../../src/netlify/commands.mjs";
 import { hasInventoryAdminPermission } from "../../src/netlify/permissions.mjs";
+import { handler as inviteHandler } from "../../netlify/functions/invite.mjs";
 
 test("registers the expected slash command names", () => {
   assert.deepEqual(
@@ -29,3 +30,13 @@ test("admin permission accepts administrator, manage channels, or manage guild",
   assert.equal(hasInventoryAdminPermission({ member: { permissions: "0" } }), false);
 });
 
+test("invite function redirects to Discord OAuth install URL", async () => {
+  process.env.DISCORD_APPLICATION_ID = "1234567890";
+
+  const response = await inviteHandler();
+
+  assert.equal(response.statusCode, 302);
+  assert.match(response.headers.location, /discord\.com\/oauth2\/authorize/);
+  assert.match(response.headers.location, /client_id=1234567890/);
+  assert.match(response.headers.location, /permissions=84992/);
+});

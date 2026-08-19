@@ -2,6 +2,8 @@
 
 Esta es la ruta más corta para subirlo a internet con Netlify.
 
+Si quieres el camino recomendado con GitHub, Netlify y una página con botón de invitación, usa [GUIA_FACIL_GITHUB_NETLIFY_DISCORD.md](GUIA_FACIL_GITHUB_NETLIFY_DISCORD.md).
+
 Arquitectura:
 
 ```text

@@ -15,6 +15,11 @@
   to = "/.netlify/functions/discord-interactions"
   status = 200
 
+[[redirects]]
+  from = "/invite"
+  to = "/.netlify/functions/invite"
+  status = 200
+
 [template.environment]
   DISCORD_TOKEN = "Token del bot de Discord"
   DISCORD_APPLICATION_ID = "Application ID de Discord"

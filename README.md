@@ -17,6 +17,8 @@ Ruta más corta para copiar y pegar: [COPIAR_PEGAR_NETLIFY.md](COPIAR_PEGAR_NETL
 
 Si no quieres usar GitHub, sigue [NETLIFY_SIN_GITHUB.md](NETLIFY_SIN_GITHUB.md).
 
+Ruta recomendada, la más fácil para compartir e instalar: [GUIA_FACIL_GITHUB_NETLIFY_DISCORD.md](GUIA_FACIL_GITHUB_NETLIFY_DISCORD.md).
+
 ## Instalación rápida
 
 1. Instala Python 3.12 o superior.
