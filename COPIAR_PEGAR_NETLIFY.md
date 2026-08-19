@@ -88,22 +88,32 @@ URL de Netlify
 
 Si todavía no tienes URL de Netlify, deja esa pregunta vacía.
 
-## 4. Sube el proyecto a GitHub
+## 4. GitHub
 
-Si no quieres usar GitHub, salta esta sección y usa [NETLIFY_SIN_GITHUB.md](NETLIFY_SIN_GITHUB.md).
+Tu repositorio definitivo es:
 
-Si todavía no has creado repositorio:
-
-```powershell
-git init
-git add .
-git commit -m "Bot inventario Discord Netlify"
+```text
+https://github.com/jesusaleamn/bot-dc
 ```
 
-Crea un repositorio en GitHub y luego pega los comandos que GitHub te dé. Serán parecidos a:
+La URL interna de Git termina en `.git`. Eso es normal:
+
+```text
+https://github.com/jesusaleamn/bot-dc.git
+```
+
+Este proyecto ya está conectado y subido a GitHub. Para comprobarlo:
 
 ```powershell
-git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
+git remote -v
+git branch --show-current
+git status
+```
+
+Si tienes que reconectar el proyecto, usa exactamente:
+
+```powershell
+git remote set-url origin https://github.com/jesusaleamn/bot-dc.git
 git branch -M main
 git push -u origin main
 ```

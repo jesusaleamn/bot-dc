@@ -4,6 +4,8 @@ Bot sencillo para gestionar inventarios compartidos por canal dentro de un servi
 
 No incluye economía, tienda, monedas, RPG, personajes ni inventarios personales. Cada inventario pertenece únicamente a la combinación `guild_id + channel_id`.
 
+Repositorio del proyecto: `https://github.com/jesusaleamn/bot-dc`
+
 ## Netlify
 
 Este proyecto incluye dos formas de despliegue:
