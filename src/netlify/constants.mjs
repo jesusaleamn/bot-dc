@@ -10,6 +10,8 @@ export const InteractionResponseType = {
   CHANNEL_MESSAGE_WITH_SOURCE: 4,
 };
 
+export const EPHEMERAL_DELETE_DELAY_MS = 5000;
+
 export const MessageFlags = {
   EPHEMERAL: 1 << 6,
 };
@@ -28,4 +30,3 @@ export const PermissionBits = {
   MANAGE_CHANNELS: 1n << 4n,
   MANAGE_GUILD: 1n << 5n,
 };
-

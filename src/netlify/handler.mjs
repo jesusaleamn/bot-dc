@@ -5,6 +5,7 @@ import { hasInventoryAdminPermission } from "./permissions.mjs";
 import { httpJson, interactionMessage, pongResponse } from "./responses.mjs";
 import { buildHelpEmbed, buildInventoryEmbed } from "./render.mjs";
 import { editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
+import { scheduleEphemeralResponseDeletion } from "./ephemeral-cleanup.mjs";
 import {
   addQuantity,
   createInventory,
@@ -124,7 +125,7 @@ async function handleCreateInventory(context, options) {
     messageId: message.id,
   });
 
-  return interactionMessage({ content: SUCCESS_MESSAGE });
+  return temporarySuccessMessage(context);
 }
 
 async function handleCreateItem(context, options) {
@@ -194,9 +195,7 @@ async function handleRecreate(context) {
         view.inventory.message_id,
         buildInventoryEmbed(view.inventory.name, view.items),
       );
-      return interactionMessage({
-        content: SUCCESS_MESSAGE,
-      });
+      return temporarySuccessMessage(context);
     } catch (error) {
       if (!(error instanceof InventoryMessageMissingError)) {
         throw error;
@@ -214,7 +213,7 @@ async function handleRecreate(context) {
     recordRecreate: true,
   });
 
-  return interactionMessage({ content: SUCCESS_MESSAGE });
+  return temporarySuccessMessage(context);
 }
 
 async function handleHistory(context, options) {
@@ -237,6 +236,9 @@ async function handleHistory(context, options) {
 async function refreshThenReply(context, successMessage) {
   try {
     await refreshPermanentMessage(context);
+    if (successMessage === SUCCESS_MESSAGE) {
+      return temporarySuccessMessage(context);
+    }
     return interactionMessage({ content: successMessage });
   } catch (error) {
     if (error instanceof InventoryMessageMissingError) {
@@ -294,7 +296,18 @@ function getContext(interaction) {
     guildId: interaction.guild_id,
     channelId: interaction.channel_id,
     userId,
+    applicationId: interaction.application_id,
+    interactionToken: interaction.token,
   };
+}
+
+async function temporarySuccessMessage(context) {
+  await scheduleEphemeralResponseDeletion({
+    applicationId: context.applicationId,
+    interactionToken: context.interactionToken,
+  });
+
+  return interactionMessage({ content: SUCCESS_MESSAGE });
 }
 
 function parseOptions(options) {

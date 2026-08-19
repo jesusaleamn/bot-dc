@@ -5,6 +5,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions.delete-ephemeral-response-background]
+  background = true
+
 [[redirects]]
   from = "/health"
   to = "/.netlify/functions/health"

@@ -66,3 +66,20 @@ export async function registerApplicationCommands(applicationId, commands, guild
   });
 }
 
+export async function deleteOriginalInteractionResponse(applicationId, interactionToken) {
+  const response = await fetch(
+    `${DISCORD_API_BASE}/webhooks/${applicationId}/${interactionToken}/messages/@original`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  if (response.status === 204 || response.status === 404) {
+    return;
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Discord interaction cleanup error", response.status, body);
+  }
+}
