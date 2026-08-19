@@ -11,11 +11,25 @@ const itemIdOption = {
 
 const positiveAmountOption = {
   name: "cantidad",
-  description: "Cantidad positiva.",
+  description: "Opcional. Si lo dejas vacio usa 1.",
   type: ApplicationCommandOptionType.INTEGER,
-  required: true,
+  required: false,
   min_value: 1,
-  max_value: 2147483647,
+  max_value: 10,
+  choices: [
+    {
+      name: "1",
+      value: 1,
+    },
+    {
+      name: "5",
+      value: 5,
+    },
+    {
+      name: "10",
+      value: 10,
+    },
+  ],
 };
 
 const initialQuantityOption = {
@@ -132,4 +146,3 @@ export const COMMANDS = [
     dm_permission: false,
   },
 ];
-

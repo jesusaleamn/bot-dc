@@ -52,8 +52,8 @@ export function buildHelpEmbed() {
     description: [
       "`/inventario nombre:Alquimia` crea el inventario del canal.",
       "`/crear id:1 nombre:Flor de montaña cantidad:50` registra un objeto.",
-      "`/sumar id:1 cantidad:20` suma cantidad.",
-      "`/restar id:1 cantidad:5` resta sin permitir negativos.",
+      "`/sumar id:1` suma 1. Opcional: elige 5 o 10.",
+      "`/restar id:1` resta 1. Opcional: elige 5 o 10.",
       "`/editar id:1 nombre:Nuevo nombre` renombra un objeto.",
       "`/borrar id:1` elimina un objeto.",
       "`/ver` muestra el inventario solo para ti.",
@@ -62,4 +62,3 @@ export function buildHelpEmbed() {
     ].join("\n"),
   };
 }
-

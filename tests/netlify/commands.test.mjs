@@ -6,6 +6,14 @@ import { hasInventoryAdminPermission } from "../../src/netlify/permissions.mjs";
 import { handler as healthHandler } from "../../netlify/functions/health.mjs";
 import { handler as inviteHandler } from "../../netlify/functions/invite.mjs";
 
+function commandByName(name) {
+  return COMMANDS.find((command) => command.name === name);
+}
+
+function optionByName(command, name) {
+  return command.options?.find((option) => option.name === name);
+}
+
 test("registers the expected slash command names", () => {
   assert.deepEqual(
     COMMANDS.map((command) => command.name),
@@ -22,6 +30,19 @@ test("registers the expected slash command names", () => {
       "ayuda",
     ],
   );
+});
+
+test("sumar and restar can be used with only id", () => {
+  for (const commandName of ["sumar", "restar"]) {
+    const command = commandByName(commandName);
+    const amount = optionByName(command, "cantidad");
+
+    assert.equal(amount.required, false);
+    assert.deepEqual(
+      amount.choices.map((choice) => choice.value),
+      [1, 5, 10],
+    );
+  }
 });
 
 test("admin permission accepts administrator, manage channels, or manage guild", () => {

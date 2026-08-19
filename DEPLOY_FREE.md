@@ -133,8 +133,8 @@ En `#almacen-alquimia`:
 ```text
 /inventario nombre:Alquimia
 /crear id:1 nombre:Flor de montaña cantidad:50
-/sumar id:1 cantidad:20
-/restar id:1 cantidad:10
+/sumar id:1
+/restar id:1
 ```
 
 Resultado esperado:
@@ -148,7 +148,7 @@ En otro canal, por ejemplo `#almacen-leñadores`:
 ```text
 /inventario nombre:Leñadores
 /crear id:1 nombre:Leña cantidad:100
-/sumar id:1 cantidad:20
+/sumar id:1
 ```
 
 Resultado esperado:
@@ -214,4 +214,3 @@ Si quieres tranquilidad real:
 ```text
 VPS barato + PostgreSQL + backups
 ```
-

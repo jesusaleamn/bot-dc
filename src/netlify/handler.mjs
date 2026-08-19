@@ -19,6 +19,8 @@ import {
 } from "./database.mjs";
 import { InventoryError, InventoryMessageMissingError } from "./errors.mjs";
 
+const SUCCESS_MESSAGE = "Listo.";
+
 export async function handleDiscordInteraction(event) {
   if (event.httpMethod !== "POST") {
     return httpJson(405, { error: "method_not_allowed" });
@@ -122,69 +124,57 @@ async function handleCreateInventory(context, options) {
     messageId: message.id,
   });
 
-  return interactionMessage({ content: "✅ Inventario creado en este canal." });
+  return interactionMessage({ content: SUCCESS_MESSAGE });
 }
 
 async function handleCreateItem(context, options) {
-  const item = await createItem({
+  await createItem({
     ...context,
     itemId: options.id,
     name: options.nombre,
     quantity: options.cantidad,
   });
 
-  return refreshThenReply(
-    context,
-    `✅ ID ${item.item_id} creado: ${item.name} → ${item.quantity}`,
-  );
+  return refreshThenReply(context, SUCCESS_MESSAGE);
 }
 
 async function handleAdd(context, options) {
-  const change = await addQuantity({
+  await addQuantity({
     ...context,
     itemId: options.id,
-    amount: options.cantidad,
+    amount: options.cantidad ?? 1,
   });
 
-  return refreshThenReply(
-    context,
-    `✅ ID ${change.item_id} actualizado: ${change.name} → ${change.after_quantity}`,
-  );
+  return refreshThenReply(context, SUCCESS_MESSAGE);
 }
 
 async function handleSubtract(context, options) {
-  const change = await subtractQuantity({
+  await subtractQuantity({
     ...context,
     itemId: options.id,
-    amount: options.cantidad,
+    amount: options.cantidad ?? 1,
   });
 
-  return refreshThenReply(
-    context,
-    `✅ ID ${change.item_id} actualizado: ${change.name} → ${change.after_quantity}`,
-  );
+  return refreshThenReply(context, SUCCESS_MESSAGE);
 }
 
 async function handleEdit(context, options) {
-  const item = await editItemName({
+  await editItemName({
     ...context,
     itemId: options.id,
     name: options.nombre,
   });
 
-  return refreshThenReply(
-    context,
-    `✅ ID ${item.item_id} renombrado: ${item.name} → ${item.quantity}`,
-  );
+  return refreshThenReply(context, SUCCESS_MESSAGE);
 }
 
 async function handleDelete(context, options) {
-  const item = await deleteItem({
+  await deleteItem({
     ...context,
     itemId: options.id,
   });
 
-  return refreshThenReply(context, `✅ ID ${item.item_id} borrado: ${item.name}`);
+  return refreshThenReply(context, SUCCESS_MESSAGE);
 }
 
 async function handleView(context) {
@@ -205,7 +195,7 @@ async function handleRecreate(context) {
         buildInventoryEmbed(view.inventory.name, view.items),
       );
       return interactionMessage({
-        content: "✅ El mensaje permanente seguía existiendo y ha sido actualizado.",
+        content: SUCCESS_MESSAGE,
       });
     } catch (error) {
       if (!(error instanceof InventoryMessageMissingError)) {
@@ -224,7 +214,7 @@ async function handleRecreate(context) {
     recordRecreate: true,
   });
 
-  return interactionMessage({ content: "✅ Mensaje permanente recreado." });
+  return interactionMessage({ content: SUCCESS_MESSAGE });
 }
 
 async function handleHistory(context, options) {
