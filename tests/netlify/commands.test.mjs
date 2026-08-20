@@ -44,6 +44,16 @@ test("sumar and restar can be used with only id or any positive amount", () => {
   }
 });
 
+test("item ids can use three digits", () => {
+  for (const commandName of ["crear", "sumar", "restar", "editar", "borrar"]) {
+    const command = commandByName(commandName);
+    const id = optionByName(command, "id");
+
+    assert.equal(id.min_value, 1);
+    assert.equal(id.max_value, 999);
+  }
+});
+
 test("only borrar requires elevated Discord permissions", () => {
   assert.deepEqual([...ADMIN_COMMANDS], ["borrar"]);
 });

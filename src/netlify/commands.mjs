@@ -1,12 +1,12 @@
-import { ApplicationCommandOptionType, ApplicationCommandType } from "./constants.mjs";
+import { ApplicationCommandOptionType, ApplicationCommandType, MAX_ITEM_ID } from "./constants.mjs";
 
 const itemIdOption = {
   name: "id",
-  description: "ID del objeto, del 1 al 9.",
+  description: `ID del objeto, del 1 al ${MAX_ITEM_ID}.`,
   type: ApplicationCommandOptionType.INTEGER,
   required: true,
   min_value: 1,
-  max_value: 9,
+  max_value: MAX_ITEM_ID,
 };
 
 const positiveAmountOption = {

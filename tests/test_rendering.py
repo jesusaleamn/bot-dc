@@ -13,11 +13,10 @@ def test_render_inventory_orders_items_by_id() -> None:
     rendered = render_inventory(
         "Leñadores",
         [
-            InventoryItemDTO(item_id=3, name="Ramas", quantity=15),
-            InventoryItemDTO(item_id=1, name="Leña", quantity=120),
+            InventoryItemDTO(item_id=601, name="Ramas", quantity=15),
+            InventoryItemDTO(item_id=102, name="Leña", quantity=120),
         ],
     )
 
-    assert rendered.description.index(" 1 │ Leña") < rendered.description.index(" 3 │ Ramas")
+    assert rendered.description.index("102 │ Leña") < rendered.description.index("601 │ Ramas")
     assert "120" in rendered.description
-

@@ -16,7 +16,7 @@ from inventory_bot import repository
 
 logger = logging.getLogger(__name__)
 
-ItemId = app_commands.Range[int, 1, 9]
+ItemId = app_commands.Range[int, 1, 999]
 PositiveAmount = app_commands.Range[int, 1, 2_147_483_647]
 InitialQuantity = app_commands.Range[int, 0, 2_147_483_647]
 HistoryLimit = app_commands.Range[int, 1, 20]
@@ -150,7 +150,7 @@ class InventoryCog(commands.Cog):
                 await self._send_ephemeral(interaction, f"❌ {exc}")
 
     @app_commands.command(name="crear", description="Registra un objeto en el inventario de este canal.")
-    @app_commands.describe(id="ID del objeto, del 1 al 9.", nombre="Nombre del material.", cantidad="Cantidad inicial.")
+    @app_commands.describe(id="ID del objeto, del 1 al 999.", nombre="Nombre del material.", cantidad="Cantidad inicial.")
     @app_commands.guild_only()
     async def crear(self, interaction: discord.Interaction, id: ItemId, nombre: str, cantidad: InitialQuantity) -> None:
         if not await self._require_admin(interaction):
@@ -181,7 +181,7 @@ class InventoryCog(commands.Cog):
                 await self._send_ephemeral(interaction, f"❌ {exc}")
 
     @app_commands.command(name="sumar", description="Suma cantidad a un objeto del inventario de este canal.")
-    @app_commands.describe(id="ID del objeto, del 1 al 9.", cantidad="Cantidad positiva que se va a sumar.")
+    @app_commands.describe(id="ID del objeto, del 1 al 999.", cantidad="Cantidad positiva que se va a sumar.")
     @app_commands.guild_only()
     async def sumar(self, interaction: discord.Interaction, id: ItemId, cantidad: PositiveAmount) -> None:
         await self._defer(interaction)
@@ -206,7 +206,7 @@ class InventoryCog(commands.Cog):
                 await self._send_ephemeral(interaction, exc.user_message)
 
     @app_commands.command(name="restar", description="Resta cantidad a un objeto sin permitir valores negativos.")
-    @app_commands.describe(id="ID del objeto, del 1 al 9.", cantidad="Cantidad positiva que se va a restar.")
+    @app_commands.describe(id="ID del objeto, del 1 al 999.", cantidad="Cantidad positiva que se va a restar.")
     @app_commands.guild_only()
     async def restar(self, interaction: discord.Interaction, id: ItemId, cantidad: PositiveAmount) -> None:
         await self._defer(interaction)
@@ -231,7 +231,7 @@ class InventoryCog(commands.Cog):
                 await self._send_ephemeral(interaction, exc.user_message)
 
     @app_commands.command(name="editar", description="Cambia el nombre de un objeto sin modificar su cantidad.")
-    @app_commands.describe(id="ID del objeto, del 1 al 9.", nombre="Nuevo nombre del material.")
+    @app_commands.describe(id="ID del objeto, del 1 al 999.", nombre="Nuevo nombre del material.")
     @app_commands.guild_only()
     async def editar(self, interaction: discord.Interaction, id: ItemId, nombre: str) -> None:
         if not await self._require_admin(interaction):
@@ -261,7 +261,7 @@ class InventoryCog(commands.Cog):
                 await self._send_ephemeral(interaction, f"❌ {exc}")
 
     @app_commands.command(name="borrar", description="Elimina un objeto del inventario de este canal.")
-    @app_commands.describe(id="ID del objeto que se va a borrar, del 1 al 9.")
+    @app_commands.describe(id="ID del objeto que se va a borrar, del 1 al 999.")
     @app_commands.guild_only()
     async def borrar(self, interaction: discord.Interaction, id: ItemId) -> None:
         if not await self._require_admin(interaction):
@@ -418,4 +418,3 @@ class InventoryCog(commands.Cog):
 async def setup(bot: commands.Bot) -> None:
     session_factory = getattr(bot, "session_factory")
     await bot.add_cog(InventoryCog(bot, session_factory))
-

@@ -12,11 +12,10 @@ test("renderInventory shows empty state", () => {
 
 test("renderInventory sorts items by id", () => {
   const rendered = renderInventory("Leñadores", [
-    { item_id: 3, name: "Ramas", quantity: 15 },
-    { item_id: 1, name: "Leña", quantity: 120 },
+    { item_id: 601, name: "Ramas", quantity: 15 },
+    { item_id: 102, name: "Leña", quantity: 120 },
   ]);
 
-  assert.ok(rendered.description.indexOf(" 1 │ Leña") < rendered.description.indexOf(" 3 │ Ramas"));
+  assert.ok(rendered.description.indexOf("102 │ Leña") < rendered.description.indexOf("601 │ Ramas"));
   assert.match(rendered.description, /120/);
 });
-

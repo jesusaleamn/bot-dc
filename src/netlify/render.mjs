@@ -1,3 +1,5 @@
+import { ITEM_ID_WIDTH } from "./constants.mjs";
+
 const MATERIAL_WIDTH = 28;
 
 function shorten(value, width) {
@@ -18,14 +20,14 @@ export function renderInventory(name, items) {
   }
 
   const lines = [
-    `${"ID".padStart(2)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(8)}`,
-    `${"─".repeat(2)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(8)}`,
+    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(8)}`,
+    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(8)}`,
   ];
 
   for (const item of [...items].sort((a, b) => a.item_id - b.item_id)) {
     const material = shorten(item.name, MATERIAL_WIDTH);
     lines.push(
-      `${String(item.item_id).padStart(2)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(8)}`,
+      `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(8)}`,
     );
   }
 

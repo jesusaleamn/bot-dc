@@ -40,7 +40,7 @@ class InventoryItem(Base):
     __tablename__ = "inventory_items"
     __table_args__ = (
         UniqueConstraint("inventory_id", "item_id", name="uq_inventory_item_id"),
-        CheckConstraint("item_id >= 1 AND item_id <= 9", name="ck_item_id_one_digit"),
+        CheckConstraint("item_id >= 1 AND item_id <= 999", name="ck_item_id_three_digits"),
         CheckConstraint("quantity >= 0", name="ck_item_quantity_non_negative"),
     )
 
@@ -77,4 +77,3 @@ class InventoryHistory(Base):
     after_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     user_id: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
-

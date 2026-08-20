@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     CONSTRAINT uq_inventory_item_id UNIQUE (inventory_id, item_id),
-    CONSTRAINT ck_item_id_one_digit CHECK (item_id >= 1 AND item_id <= 9),
+    CONSTRAINT ck_item_id_three_digits CHECK (item_id >= 1 AND item_id <= 999),
     CONSTRAINT ck_item_quantity_non_negative CHECK (quantity >= 0)
 );
 
@@ -52,4 +52,3 @@ CREATE INDEX IF NOT EXISTS ix_inventory_history_inventory_id ON inventory_histor
 CREATE INDEX IF NOT EXISTS ix_inventory_history_guild_id ON inventory_history (guild_id);
 CREATE INDEX IF NOT EXISTS ix_inventory_history_channel_id ON inventory_history (channel_id);
 CREATE INDEX IF NOT EXISTS ix_inventory_history_created_at ON inventory_history (created_at);
-

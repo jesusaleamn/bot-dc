@@ -7,6 +7,7 @@ import discord
 from inventory_bot.dtos import InventoryItemDTO
 
 MATERIAL_WIDTH = 28
+ITEM_ID_WIDTH = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,12 +31,12 @@ def render_inventory(name: str, items: list[InventoryItemDTO]) -> RenderedInvent
         return RenderedInventory(title=title, description="> No hay objetos registrados.")
 
     lines = [
-        f"{'ID':>2} │ {'MATERIAL':<{MATERIAL_WIDTH}} │ {'CANTIDAD':>8}",
-        f"{'─' * 2}─┼─{'─' * MATERIAL_WIDTH}─┼─{'─' * 8}",
+        f"{'ID':>{ITEM_ID_WIDTH}} │ {'MATERIAL':<{MATERIAL_WIDTH}} │ {'CANTIDAD':>8}",
+        f"{'─' * ITEM_ID_WIDTH}─┼─{'─' * MATERIAL_WIDTH}─┼─{'─' * 8}",
     ]
     for item in sorted(items, key=lambda entry: entry.item_id):
         material = _shorten(item.name, MATERIAL_WIDTH)
-        lines.append(f"{item.item_id:>2} │ {material:<{MATERIAL_WIDTH}} │ {item.quantity:>8}")
+        lines.append(f"{item.item_id:>{ITEM_ID_WIDTH}} │ {material:<{MATERIAL_WIDTH}} │ {item.quantity:>8}")
 
     return RenderedInventory(title=title, description=f"```text\n{chr(10).join(lines)}\n```")
 
@@ -49,4 +50,3 @@ def build_inventory_embed(name: str, items: list[InventoryItemDTO]) -> discord.E
     )
     embed.set_footer(text="Inventario compartido de este canal")
     return embed
-

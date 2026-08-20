@@ -72,9 +72,24 @@ export async function ensureSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT uq_inventory_item_id UNIQUE (inventory_id, item_id),
-        CONSTRAINT ck_item_id_one_digit CHECK (item_id >= 1 AND item_id <= 9),
+        CONSTRAINT ck_item_id_three_digits CHECK (item_id >= 1 AND item_id <= 999),
         CONSTRAINT ck_item_quantity_non_negative CHECK (quantity >= 0)
       )
+    `;
+    await sql`ALTER TABLE inventory_items DROP CONSTRAINT IF EXISTS ck_item_id_one_digit`;
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid = 'inventory_items'::regclass
+            AND conname = 'ck_item_id_three_digits'
+        ) THEN
+          ALTER TABLE inventory_items
+          ADD CONSTRAINT ck_item_id_three_digits CHECK (item_id >= 1 AND item_id <= 999);
+        END IF;
+      END $$;
     `;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_items_inventory_id ON inventory_items (inventory_id)`;
     await sql`
@@ -580,4 +595,3 @@ function normalizeChange(row) {
     version: Number(row.version),
   };
 }
-

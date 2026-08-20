@@ -55,9 +55,9 @@ Ruta recomendada, la más fácil para compartir e instalar: [GUIA_FACIL_GITHUB_N
 
    ```text
    /inventario nombre:Alquimia
-   /crear id:1 nombre:Flor de montaña cantidad:50
-   /sumar id:1 cantidad:101
-   /restar id:1 cantidad:10
+   /crear id:101 nombre:Flor de montaña cantidad:50
+   /sumar id:101 cantidad:101
+   /restar id:101 cantidad:10
    ```
 
 El mensaje permanente del inventario se actualizará en el canal. Las respuestas de `/sumar` y `/restar` serán efímeras.
@@ -109,7 +109,7 @@ También hay migraciones SQL de referencia en `database/migrations/`.
 Tablas principales:
 
 - `inventories`: guarda `guild_id`, `channel_id`, nombre y `message_id` del mensaje permanente.
-- `inventory_items`: guarda objetos por inventario, con IDs del 1 al 9.
+- `inventory_items`: guarda objetos por inventario, con IDs del 1 al 999.
 - `inventory_history`: registra cambios con usuario, operación, cantidad anterior y cantidad nueva.
 
 ## Discord Developer Portal
@@ -152,10 +152,10 @@ Públicos para cualquier usuario que pueda usar comandos en el canal:
 
 ```text
 /inventario nombre:Alquimia
-/crear id:1 nombre:Flor de montaña cantidad:50
-/sumar id:1 cantidad:101
-/restar id:1 cantidad:10
-/editar id:1 nombre:Nuevo nombre
+/crear id:101 nombre:Flor de montaña cantidad:50
+/sumar id:101 cantidad:101
+/restar id:101 cantidad:10
+/editar id:101 nombre:Nuevo nombre
 /ver
 /recrear_inventario
 /historial limite:10
@@ -165,7 +165,7 @@ Públicos para cualquier usuario que pueda usar comandos en el canal:
 Protegido:
 
 ```text
-/borrar id:1
+/borrar id:101
 ```
 
 Solo `/borrar` requiere que el usuario tenga al menos uno de estos permisos en Discord:

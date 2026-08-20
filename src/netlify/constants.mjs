@@ -1,4 +1,6 @@
 export const DISCORD_API_BASE = "https://discord.com/api/v10";
+export const MAX_ITEM_ID = 999;
+export const ITEM_ID_WIDTH = 3;
 
 export const InteractionType = {
   PING: 1,
