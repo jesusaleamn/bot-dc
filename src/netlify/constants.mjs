@@ -25,6 +25,7 @@ export const ApplicationCommandType = {
 export const ApplicationCommandOptionType = {
   STRING: 3,
   INTEGER: 4,
+  USER: 6,
 };
 
 export const PermissionBits = {

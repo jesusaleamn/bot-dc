@@ -18,6 +18,15 @@ const positiveAmountOption = {
   max_value: 2147483647,
 };
 
+const requiredAmountOption = {
+  name: "cantidad",
+  description: "Cantidad.",
+  type: ApplicationCommandOptionType.INTEGER,
+  required: true,
+  min_value: 1,
+  max_value: 2147483647,
+};
+
 const initialQuantityOption = {
   name: "cantidad",
   description: "Cantidad inicial.",
@@ -34,6 +43,43 @@ const nameOption = {
   required: true,
   min_length: 1,
   max_length: 100,
+};
+
+const orderNumberOption = {
+  name: "pedido",
+  description: "Numero del pedido.",
+  type: ApplicationCommandOptionType.INTEGER,
+  required: true,
+  min_value: 1,
+  max_value: 2147483647,
+};
+
+const requesterOption = {
+  name: "usuario",
+  description: "Quien pide el material. Si lo dejas vacio eres tu.",
+  type: ApplicationCommandOptionType.USER,
+  required: false,
+};
+
+const optionalUserOption = {
+  name: "usuario",
+  description: "Filtra por usuario.",
+  type: ApplicationCommandOptionType.USER,
+  required: false,
+};
+
+const optionalItemIdOption = {
+  ...itemIdOption,
+  required: false,
+};
+
+const optionalLimitOption = {
+  name: "limite",
+  description: "Numero de entradas, entre 1 y 20.",
+  type: ApplicationCommandOptionType.INTEGER,
+  required: false,
+  min_value: 1,
+  max_value: 20,
 };
 
 export const ADMIN_COMMANDS = new Set(["borrar"]);
@@ -107,16 +153,48 @@ export const COMMANDS = [
     description: "Muestra los últimos cambios del inventario de este canal.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
-    options: [
-      {
-        name: "limite",
-        description: "Número de entradas, entre 1 y 20.",
-        type: ApplicationCommandOptionType.INTEGER,
-        required: false,
-        min_value: 1,
-        max_value: 20,
-      },
-    ],
+    options: [optionalLimitOption],
+  },
+  {
+    name: "pedidos",
+    description: "Publica o actualiza la tabla de pedidos activos.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+  },
+  {
+    name: "pedido_crear",
+    description: "Crea un pedido para un material del inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [itemIdOption, requiredAmountOption, requesterOption],
+  },
+  {
+    name: "pedido_llevar",
+    description: "Suma cantidad llevada a un pedido activo.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [orderNumberOption, requiredAmountOption],
+  },
+  {
+    name: "pedido_completar",
+    description: "Marca un pedido como completado.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [orderNumberOption],
+  },
+  {
+    name: "pedidos_completados",
+    description: "Muestra pedidos completados recientes.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [optionalLimitOption],
+  },
+  {
+    name: "actividad",
+    description: "Resume quien ha sumado y restado materiales.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [optionalUserOption, optionalItemIdOption, optionalLimitOption],
   },
   {
     name: "ayuda",

@@ -3,22 +3,40 @@ import { InteractionType } from "./constants.mjs";
 import { ADMIN_COMMANDS } from "./commands.mjs";
 import { hasInventoryAdminPermission } from "./permissions.mjs";
 import { httpJson, interactionMessage, pongResponse } from "./responses.mjs";
-import { buildHelpEmbed, buildInventoryEmbed } from "./render.mjs";
+import {
+  buildActivityEmbed,
+  buildCompletedOrdersEmbed,
+  buildHelpEmbed,
+  buildInventoryEmbed,
+  buildOrdersEmbed,
+} from "./render.mjs";
 import { editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
 import { scheduleEphemeralResponseDeletion } from "./ephemeral-cleanup.mjs";
 import {
   addQuantity,
+  completeOrder,
   createInventory,
   createItem,
+  createOrder,
   deleteItem,
+  deliverOrder,
   editItemName,
+  getOrdersView,
   getInventoryVersion,
   getInventoryView,
+  listActivitySummary,
+  listCompletedOrders,
   listHistory,
+  setOrdersMessageId,
   setInventoryMessageId,
   subtractQuantity,
 } from "./database.mjs";
-import { BotPermissionError, InventoryError, InventoryMessageMissingError } from "./errors.mjs";
+import {
+  BotPermissionError,
+  InventoryError,
+  InventoryMessageMissingError,
+  OrdersMessageMissingError,
+} from "./errors.mjs";
 
 const SUCCESS_MESSAGE = "Listo.";
 
@@ -101,6 +119,18 @@ async function handleCommand(interaction) {
       return handleRecreate(context);
     case "historial":
       return handleHistory(context, options);
+    case "pedidos":
+      return handleOrdersBoard(context);
+    case "pedido_crear":
+      return handleCreateOrder(context, options);
+    case "pedido_llevar":
+      return handleDeliverOrder(context, options);
+    case "pedido_completar":
+      return handleCompleteOrder(context, options);
+    case "pedidos_completados":
+      return handleCompletedOrders(context, options);
+    case "actividad":
+      return handleActivity(context, options);
     case "ayuda":
       return interactionMessage({ embeds: [buildHelpEmbed()] });
     default:
@@ -242,6 +272,65 @@ async function handleHistory(context, options) {
   });
 }
 
+async function handleOrdersBoard(context) {
+  await publishOrdersBoard(context);
+  return temporarySuccessMessage(context);
+}
+
+async function handleCreateOrder(context, options) {
+  await createOrder({
+    ...context,
+    itemId: options.id,
+    quantity: options.cantidad,
+    requesterUserId: options.usuario ?? context.userId,
+  });
+
+  return refreshOrdersThenReply(context);
+}
+
+async function handleDeliverOrder(context, options) {
+  await deliverOrder({
+    ...context,
+    orderNo: options.pedido,
+    amount: options.cantidad,
+  });
+
+  return refreshOrdersThenReply(context);
+}
+
+async function handleCompleteOrder(context, options) {
+  await completeOrder({
+    ...context,
+    orderNo: options.pedido,
+  });
+
+  return refreshOrdersThenReply(context);
+}
+
+async function handleCompletedOrders(context, options) {
+  const orders = await listCompletedOrders({
+    ...context,
+    limit: options.limite ?? 10,
+  });
+
+  return interactionMessage({
+    embeds: [buildCompletedOrdersEmbed(orders)],
+  });
+}
+
+async function handleActivity(context, options) {
+  const entries = await listActivitySummary({
+    ...context,
+    userId: options.usuario ?? null,
+    itemId: options.id ?? null,
+    limit: options.limite ?? 12,
+  });
+
+  return interactionMessage({
+    embeds: [buildActivityEmbed(entries)],
+  });
+}
+
 async function refreshThenReply(context, successMessage) {
   try {
     await refreshPermanentMessage(context);
@@ -262,6 +351,63 @@ async function refreshThenReply(context, successMessage) {
     }
     throw error;
   }
+}
+
+async function refreshOrdersThenReply(context) {
+  try {
+    await refreshOrdersBoard(context);
+    return temporarySuccessMessage(context);
+  } catch (error) {
+    if (error instanceof OrdersMessageMissingError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}`,
+      });
+    }
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}\n\nEl pedido se ha guardado, pero no puedo actualizar la tabla de pedidos hasta que el bot tenga permisos en este canal.`,
+      });
+    }
+    throw error;
+  }
+}
+
+async function publishOrdersBoard(context) {
+  const view = await getOrdersView(context);
+
+  if (view.inventory.orders_message_id) {
+    try {
+      await editInventoryMessage(
+        context.channelId,
+        view.inventory.orders_message_id,
+        buildOrdersEmbed(view),
+      );
+      return;
+    } catch (error) {
+      if (!(error instanceof InventoryMessageMissingError)) {
+        throw error;
+      }
+    }
+  }
+
+  const message = await sendInventoryMessage(context.channelId, buildOrdersEmbed(view));
+  await setOrdersMessageId({
+    ...context,
+    messageId: message.id,
+  });
+}
+
+async function refreshOrdersBoard(context) {
+  const view = await getOrdersView(context);
+  if (!view.inventory.orders_message_id) {
+    throw new OrdersMessageMissingError();
+  }
+
+  await editInventoryMessage(
+    context.channelId,
+    view.inventory.orders_message_id,
+    buildOrdersEmbed(view),
+  );
 }
 
 async function refreshPermanentMessage(context) {

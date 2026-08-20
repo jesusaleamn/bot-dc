@@ -7,6 +7,7 @@ import {
   InventoryNotFoundError,
   ItemAlreadyExistsError,
   ItemNotFoundError,
+  OrderNotFoundError,
 } from "./errors.mjs";
 
 let sqlClient = null;
@@ -60,6 +61,7 @@ export async function ensureSchema() {
     `;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventories_guild_id ON inventories (guild_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventories_channel_id ON inventories (channel_id)`;
+    await sql`ALTER TABLE inventories ADD COLUMN IF NOT EXISTS orders_message_id VARCHAR(32)`;
     await sql`
       CREATE TABLE IF NOT EXISTS inventory_items (
         id BIGSERIAL PRIMARY KEY,
@@ -114,6 +116,30 @@ export async function ensureSchema() {
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_history_guild_id ON inventory_history (guild_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_history_channel_id ON inventory_history (channel_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_history_created_at ON inventory_history (created_at)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_orders (
+        id BIGSERIAL PRIMARY KEY,
+        inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+        order_no INTEGER NOT NULL,
+        requester_user_id VARCHAR(32) NOT NULL,
+        item_id INTEGER NOT NULL,
+        item_name VARCHAR(100) NOT NULL,
+        requested_quantity BIGINT NOT NULL,
+        delivered_quantity BIGINT NOT NULL DEFAULT 0,
+        status VARCHAR(16) NOT NULL DEFAULT 'active',
+        created_by VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        CONSTRAINT uq_inventory_order_no UNIQUE (inventory_id, order_no),
+        CONSTRAINT ck_order_quantity_positive CHECK (requested_quantity > 0),
+        CONSTRAINT ck_order_delivered_non_negative CHECK (delivered_quantity >= 0),
+        CONSTRAINT ck_order_status CHECK (status IN ('active', 'completed'))
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_orders_inventory_id ON inventory_orders (inventory_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_orders_status ON inventory_orders (status)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_orders_completed_at ON inventory_orders (completed_at)`;
   })();
 
   return schemaReady;
@@ -137,7 +163,7 @@ export async function createInventory({ guildId, channelId, name, userId }) {
       FROM inserted
       RETURNING id
     )
-    SELECT id, guild_id, channel_id, name, message_id, version
+    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
     FROM inserted
   `;
 
@@ -170,7 +196,7 @@ export async function setInventoryMessageId({ guildId, channelId, messageId, use
       WHERE ${recordRecreate}
       RETURNING id
     )
-    SELECT id, guild_id, channel_id, name, message_id, version
+    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
     FROM updated
   `;
 
@@ -525,6 +551,296 @@ export async function deleteItem({ guildId, channelId, itemId, userId }) {
   };
 }
 
+export async function setOrdersMessageId({ guildId, channelId, messageId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const [row] = await sql`
+    UPDATE inventories
+    SET orders_message_id = ${messageId}, updated_at = NOW()
+    WHERE guild_id = ${guildId}
+      AND channel_id = ${channelId}
+    RETURNING id, guild_id, channel_id, name, orders_message_id
+  `;
+
+  if (!row) {
+    throw new InventoryNotFoundError();
+  }
+
+  return row;
+}
+
+export async function getOrdersView({ guildId, channelId }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId });
+
+  const activeOrders = await sql`
+    SELECT
+      order_no,
+      requester_user_id,
+      item_id,
+      item_name,
+      requested_quantity,
+      delivered_quantity,
+      created_at
+    FROM inventory_orders
+    WHERE inventory_id = ${inventory.id}
+      AND status = 'active'
+    ORDER BY order_no ASC
+  `;
+
+  const [stats] = await sql`
+    SELECT
+      COUNT(*) FILTER (
+        WHERE status = 'completed'
+          AND completed_at >= date_trunc('week', NOW())
+      ) AS completed_this_week,
+      COUNT(*) FILTER (WHERE status = 'completed') AS completed_total
+    FROM inventory_orders
+    WHERE inventory_id = ${inventory.id}
+  `;
+
+  return {
+    inventory,
+    orders: activeOrders.map(normalizeOrder),
+    completedThisWeek: Number(stats?.completed_this_week ?? 0),
+    completedTotal: Number(stats?.completed_total ?? 0),
+  };
+}
+
+export async function createOrder({ guildId, channelId, itemId, quantity, requesterUserId, userId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const [row] = await sql`
+    WITH inv AS (
+      SELECT id, guild_id, channel_id
+      FROM inventories
+      WHERE guild_id = ${guildId}
+        AND channel_id = ${channelId}
+    ),
+    item AS (
+      SELECT item_id, name
+      FROM inventory_items
+      WHERE inventory_id = (SELECT id FROM inv)
+        AND item_id = ${itemId}
+    ),
+    next_order AS (
+      SELECT COALESCE(MAX(order_no), 0) + 1 AS order_no
+      FROM inventory_orders
+      WHERE inventory_id = (SELECT id FROM inv)
+    ),
+    inserted AS (
+      INSERT INTO inventory_orders (
+        inventory_id,
+        order_no,
+        requester_user_id,
+        item_id,
+        item_name,
+        requested_quantity,
+        created_by
+      )
+      SELECT
+        inv.id,
+        next_order.order_no,
+        ${requesterUserId},
+        item.item_id,
+        item.name,
+        ${quantity},
+        ${userId}
+      FROM inv, item, next_order
+      RETURNING
+        order_no,
+        requester_user_id,
+        item_id,
+        item_name,
+        requested_quantity,
+        delivered_quantity,
+        created_at
+    )
+    SELECT *
+    FROM inserted
+  `;
+
+  if (!row) {
+    await requireInventory({ guildId, channelId });
+    throw new ItemNotFoundError(itemId);
+  }
+
+  return normalizeOrder(row);
+}
+
+export async function deliverOrder({ guildId, channelId, orderNo, amount }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const [row] = await sql`
+    WITH target AS (
+      SELECT
+        order_row.id AS row_id,
+        order_row.requested_quantity,
+        order_row.delivered_quantity
+      FROM inventory_orders order_row
+      JOIN inventories inv ON inv.id = order_row.inventory_id
+      WHERE inv.guild_id = ${guildId}
+        AND inv.channel_id = ${channelId}
+        AND order_row.order_no = ${orderNo}
+        AND order_row.status = 'active'
+    ),
+    updated AS (
+      UPDATE inventory_orders order_row
+      SET
+        delivered_quantity = LEAST(target.requested_quantity, target.delivered_quantity + ${amount}),
+        status = CASE
+          WHEN target.delivered_quantity + ${amount} >= target.requested_quantity THEN 'completed'
+          ELSE 'active'
+        END,
+        completed_at = CASE
+          WHEN target.delivered_quantity + ${amount} >= target.requested_quantity THEN NOW()
+          ELSE order_row.completed_at
+        END,
+        updated_at = NOW()
+      FROM target
+      WHERE order_row.id = target.row_id
+      RETURNING
+        order_row.order_no,
+        order_row.requester_user_id,
+        order_row.item_id,
+        order_row.item_name,
+        order_row.requested_quantity,
+        order_row.delivered_quantity,
+        order_row.status,
+        order_row.created_at,
+        order_row.completed_at
+    )
+    SELECT *
+    FROM updated
+  `;
+
+  if (!row) {
+    await requireInventory({ guildId, channelId });
+    throw new OrderNotFoundError(orderNo);
+  }
+
+  return normalizeOrder(row);
+}
+
+export async function completeOrder({ guildId, channelId, orderNo }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const [row] = await sql`
+    WITH target AS (
+      SELECT order_row.id AS row_id
+      FROM inventory_orders order_row
+      JOIN inventories inv ON inv.id = order_row.inventory_id
+      WHERE inv.guild_id = ${guildId}
+        AND inv.channel_id = ${channelId}
+        AND order_row.order_no = ${orderNo}
+        AND order_row.status = 'active'
+    ),
+    updated AS (
+      UPDATE inventory_orders order_row
+      SET
+        delivered_quantity = requested_quantity,
+        status = 'completed',
+        completed_at = NOW(),
+        updated_at = NOW()
+      FROM target
+      WHERE order_row.id = target.row_id
+      RETURNING
+        order_row.order_no,
+        order_row.requester_user_id,
+        order_row.item_id,
+        order_row.item_name,
+        order_row.requested_quantity,
+        order_row.delivered_quantity,
+        order_row.status,
+        order_row.created_at,
+        order_row.completed_at
+    )
+    SELECT *
+    FROM updated
+  `;
+
+  if (!row) {
+    await requireInventory({ guildId, channelId });
+    throw new OrderNotFoundError(orderNo);
+  }
+
+  return normalizeOrder(row);
+}
+
+export async function listCompletedOrders({ guildId, channelId, limit = 10 }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId });
+
+  const rows = await sql`
+    SELECT
+      order_no,
+      requester_user_id,
+      item_id,
+      item_name,
+      requested_quantity,
+      delivered_quantity,
+      status,
+      created_at,
+      completed_at
+    FROM inventory_orders
+    WHERE inventory_id = ${inventory.id}
+      AND status = 'completed'
+    ORDER BY completed_at DESC, order_no DESC
+    LIMIT ${limit}
+  `;
+
+  return rows.map(normalizeOrder);
+}
+
+export async function listActivitySummary({ guildId, channelId, userId = null, itemId = null, limit = 12 }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId });
+
+  const rows = await sql`
+    SELECT
+      user_id,
+      item_id,
+      COALESCE(
+        (array_agg(item_name ORDER BY created_at DESC) FILTER (WHERE item_name IS NOT NULL))[1],
+        'Material'
+      ) AS item_name,
+      COALESCE(SUM(amount) FILTER (WHERE operation = 'sumar'), 0) AS total_added,
+      COALESCE(SUM(amount) FILTER (WHERE operation = 'restar'), 0) AS total_removed,
+      COUNT(*) FILTER (WHERE operation = 'sumar') AS add_count,
+      COUNT(*) FILTER (WHERE operation = 'restar') AS subtract_count
+    FROM inventory_history
+    WHERE inventory_id = ${inventory.id}
+      AND operation IN ('sumar', 'restar')
+      AND (${userId}::text IS NULL OR user_id = ${userId})
+      AND (${itemId}::integer IS NULL OR item_id = ${itemId})
+    GROUP BY user_id, item_id
+    ORDER BY ABS(
+      COALESCE(SUM(amount) FILTER (WHERE operation = 'sumar'), 0)
+      - COALESCE(SUM(amount) FILTER (WHERE operation = 'restar'), 0)
+    ) DESC,
+    item_id ASC,
+    user_id ASC
+    LIMIT ${limit}
+  `;
+
+  return rows.map((row) => ({
+    user_id: row.user_id,
+    item_id: Number(row.item_id),
+    item_name: row.item_name,
+    total_added: Number(row.total_added),
+    total_removed: Number(row.total_removed),
+    add_count: Number(row.add_count),
+    subtract_count: Number(row.subtract_count),
+  }));
+}
+
 export async function listHistory({ guildId, channelId, limit = 10 }) {
   await ensureSchema();
   const sql = getSql();
@@ -593,5 +909,19 @@ function normalizeChange(row) {
     before_quantity: Number(row.before_quantity),
     after_quantity: Number(row.after_quantity),
     version: Number(row.version),
+  };
+}
+
+function normalizeOrder(row) {
+  return {
+    order_no: Number(row.order_no),
+    requester_user_id: row.requester_user_id,
+    item_id: Number(row.item_id),
+    item_name: row.item_name,
+    requested_quantity: Number(row.requested_quantity),
+    delivered_quantity: Number(row.delivered_quantity),
+    status: row.status ?? "active",
+    created_at: row.created_at,
+    completed_at: row.completed_at ?? null,
   };
 }

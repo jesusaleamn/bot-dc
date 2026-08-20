@@ -27,6 +27,12 @@ test("registers the expected slash command names", () => {
       "ver",
       "recrear_inventario",
       "historial",
+      "pedidos",
+      "pedido_crear",
+      "pedido_llevar",
+      "pedido_completar",
+      "pedidos_completados",
+      "actividad",
       "ayuda",
     ],
   );
@@ -45,13 +51,21 @@ test("sumar and restar can be used with only id or any positive amount", () => {
 });
 
 test("item ids can use three digits", () => {
-  for (const commandName of ["crear", "sumar", "restar", "editar", "borrar"]) {
+  for (const commandName of ["crear", "sumar", "restar", "editar", "borrar", "pedido_crear"]) {
     const command = commandByName(commandName);
     const id = optionByName(command, "id");
 
     assert.equal(id.min_value, 1);
     assert.equal(id.max_value, 999);
   }
+});
+
+test("pedido_crear can assign the request to a Discord user", () => {
+  const command = commandByName("pedido_crear");
+  const user = optionByName(command, "usuario");
+
+  assert.equal(user.required, false);
+  assert.equal(user.type, 6);
 });
 
 test("only borrar requires elevated Discord permissions", () => {

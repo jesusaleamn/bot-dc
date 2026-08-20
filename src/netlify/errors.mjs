@@ -49,3 +49,15 @@ export class BotPermissionError extends InventoryError {
     );
   }
 }
+
+export class OrdersMessageMissingError extends InventoryError {
+  constructor() {
+    super("⚠️ No encuentro la tabla de pedidos. Usa `/pedidos` para publicarla de nuevo.");
+  }
+}
+
+export class OrderNotFoundError extends InventoryError {
+  constructor(orderNo) {
+    super(`⚠️ No existe ningún pedido activo con número ${orderNo}.`);
+  }
+}

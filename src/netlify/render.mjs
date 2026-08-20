@@ -1,11 +1,16 @@
 import { ITEM_ID_WIDTH } from "./constants.mjs";
 
-const MATERIAL_WIDTH = 28;
+const MATERIAL_WIDTH = 30;
+const QUANTITY_WIDTH = 10;
 
 function shorten(value, width) {
   const clean = value.trim();
   if (clean.length <= width) return clean;
   return `${clean.slice(0, width - 3)}...`;
+}
+
+function formatSigned(value) {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 export function renderInventory(name, items) {
@@ -20,14 +25,15 @@ export function renderInventory(name, items) {
   }
 
   const lines = [
-    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(8)}`,
-    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(8)}`,
+    `${"ID".padStart(ITEM_ID_WIDTH)}   ${"MATERIAL".padEnd(MATERIAL_WIDTH)}   ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
+    "",
   ];
 
   for (const item of [...items].sort((a, b) => a.item_id - b.item_id)) {
     const material = shorten(item.name, MATERIAL_WIDTH);
     lines.push(
-      `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(8)}`,
+      `${String(item.item_id).padStart(ITEM_ID_WIDTH)}   ${material.padEnd(MATERIAL_WIDTH)}   ${String(item.quantity).padStart(QUANTITY_WIDTH)}`,
+      "",
     );
   }
 
@@ -47,6 +53,91 @@ export function buildInventoryEmbed(name, items) {
   };
 }
 
+export function buildOrdersEmbed({ inventory, orders, completedThisWeek, completedTotal }) {
+  const description = [];
+
+  if (!orders.length) {
+    description.push("> No hay pedidos activos.");
+  } else {
+    for (const order of orders.slice(0, 12)) {
+      const missing = Math.max(order.requested_quantity - order.delivered_quantity, 0);
+      description.push(
+        [
+          `#${order.order_no}  <@${order.requester_user_id}>`,
+          `   ${String(order.item_id).padStart(ITEM_ID_WIDTH)}   ${shorten(order.item_name, 34)}`,
+          `   Pedido: ${order.requested_quantity}   Llevado: ${order.delivered_quantity}   Falta: ${missing}`,
+        ].join("\n"),
+      );
+    }
+
+    if (orders.length > 12) {
+      description.push(`... y ${orders.length - 12} pedidos activos mas.`);
+    }
+  }
+
+  description.push("");
+  description.push(`Completados esta semana: ${completedThisWeek}`);
+  description.push(`Completados totales: ${completedTotal}`);
+
+  return {
+    title: `📦 PEDIDOS — ${inventory.name.trim().toUpperCase()}`,
+    description: description.join("\n\n"),
+    color: 0x2f855a,
+    footer: {
+      text: "Pedidos activos del canal",
+    },
+  };
+}
+
+export function buildCompletedOrdersEmbed(orders) {
+  if (!orders.length) {
+    return {
+      title: "Pedidos completados",
+      description: "> No hay pedidos completados registrados.",
+      color: 0x2f855a,
+    };
+  }
+
+  return {
+    title: "Pedidos completados",
+    description: orders
+      .map((order) => {
+        const completedAt = order.completed_at
+          ? new Date(order.completed_at).toISOString().slice(0, 16).replace("T", " ")
+          : "sin fecha";
+        return `#${order.order_no}  <@${order.requester_user_id}>  ${order.item_id} ${shorten(order.item_name, 26)}  ${order.delivered_quantity}/${order.requested_quantity}  \`${completedAt} UTC\``;
+      })
+      .join("\n"),
+    color: 0x2f855a,
+  };
+}
+
+export function buildActivityEmbed(entries) {
+  if (!entries.length) {
+    return {
+      title: "Actividad de inventario",
+      description: "> No hay sumas ni restas registradas.",
+      color: 0x5865f2,
+    };
+  }
+
+  const lines = entries.map((entry) => {
+    const material = shorten(entry.item_name, 30);
+    const net = entry.total_added - entry.total_removed;
+    return [
+      `<@${entry.user_id}> · \`${String(entry.item_id).padStart(ITEM_ID_WIDTH)}\` ${material}`,
+      `Sumado: \`${entry.total_added}\`   Restado: \`${entry.total_removed}\`   Neto: \`${formatSigned(net)}\``,
+      `Movimientos: ${entry.add_count} sumas, ${entry.subtract_count} restas`,
+    ].join("\n");
+  });
+
+  return {
+    title: "Actividad de inventario",
+    description: lines.join("\n\n"),
+    color: 0x5865f2,
+  };
+}
+
 export function buildHelpEmbed() {
   return {
     title: "Comandos del inventario",
@@ -61,6 +152,10 @@ export function buildHelpEmbed() {
       "`/ver` muestra el inventario solo para ti.",
       "`/recrear_inventario` vuelve a publicar el mensaje fijo.",
       "`/historial limite:10` muestra cambios recientes.",
+      "`/pedidos` publica o actualiza la tabla de pedidos.",
+      "`/pedido_crear id:101 cantidad:120 usuario:@alguien` crea un pedido.",
+      "`/pedido_llevar pedido:1 cantidad:20` suma cantidad llevada.",
+      "`/actividad` resume sumas y restas por usuario.",
     ].join("\n"),
   };
 }

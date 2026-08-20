@@ -159,6 +159,12 @@ Públicos para cualquier usuario que pueda usar comandos en el canal:
 /ver
 /recrear_inventario
 /historial limite:10
+/pedidos
+/pedido_crear id:101 cantidad:120 usuario:@alguien
+/pedido_llevar pedido:1 cantidad:20
+/pedido_completar pedido:1
+/pedidos_completados limite:10
+/actividad
 /ayuda
 ```
 
@@ -193,38 +199,71 @@ El bot publicará un único mensaje permanente:
 Después:
 
 ```text
-/crear id:1 nombre:Flor de montaña cantidad:50
+/crear id:101 nombre:Flor de montaña cantidad:50
 ```
 
 El mensaje quedará actualizado con:
 
 ```text
-ID │ MATERIAL                 │ CANTIDAD
-1  │ Flor de montaña          │       50
+ ID   MATERIAL                         CANTIDAD
+
+101   Flor de montaña                        50
 ```
 
 Luego:
 
 ```text
-/sumar id:1 cantidad:20
+/sumar id:101 cantidad:20
 ```
 
 Resultado:
 
 ```text
-1  │ Flor de montaña          │       70
+101   Flor de montaña                        70
 ```
 
 Y:
 
 ```text
-/restar id:1 cantidad:10
+/restar id:101 cantidad:10
 ```
 
 Resultado:
 
 ```text
-1  │ Flor de montaña          │       60
+101   Flor de montaña                        60
+```
+
+## Pedidos
+
+Publica una tabla separada de pedidos activos:
+
+```text
+/pedidos
+```
+
+Crea pedidos vinculados a materiales del inventario:
+
+```text
+/pedido_crear id:101 cantidad:120 usuario:@Jesus
+```
+
+Suma lo que ya se ha llevado:
+
+```text
+/pedido_llevar pedido:1 cantidad:20
+```
+
+Cuando lo llevado llega al pedido, el pedido se marca como completado y desaparece de activos. La tabla muestra el contador de completados de la semana y total.
+
+## Actividad
+
+Muestra quien ha sumado o restado materiales usando automáticamente el usuario real de Discord:
+
+```text
+/actividad
+/actividad usuario:@Jesus
+/actividad id:101
 ```
 
 ## Separación entre gremios
