@@ -55,10 +55,10 @@ export function buildHelpEmbed() {
       "`/sumar id:2 cantidad:101` suma cantidad. Si omites cantidad, suma 1.",
       "`/restar id:2 cantidad:101` resta cantidad. Si omites cantidad, resta 1.",
       "`/editar id:1 nombre:Nuevo nombre` renombra un objeto.",
-      "`/borrar id:1` elimina un objeto.",
+      "`/borrar id:1` elimina un objeto. Requiere permisos.",
       "`/ver` muestra el inventario solo para ti.",
       "`/recrear_inventario` vuelve a publicar el mensaje fijo.",
-      "`/historial limite:10` muestra cambios recientes a responsables.",
+      "`/historial limite:10` muestra cambios recientes.",
     ].join("\n"),
   };
 }

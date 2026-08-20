@@ -36,14 +36,7 @@ const nameOption = {
   max_length: 100,
 };
 
-export const ADMIN_COMMANDS = new Set([
-  "inventario",
-  "crear",
-  "editar",
-  "borrar",
-  "recrear_inventario",
-  "historial",
-]);
+export const ADMIN_COMMANDS = new Set(["borrar"]);
 
 export const COMMANDS = [
   {

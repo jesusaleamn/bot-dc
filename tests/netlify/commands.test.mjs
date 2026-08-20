@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { COMMANDS } from "../../src/netlify/commands.mjs";
+import { ADMIN_COMMANDS, COMMANDS } from "../../src/netlify/commands.mjs";
 import { hasInventoryAdminPermission } from "../../src/netlify/permissions.mjs";
 import { handler as healthHandler } from "../../netlify/functions/health.mjs";
 import { handler as inviteHandler } from "../../netlify/functions/invite.mjs";
@@ -42,6 +42,10 @@ test("sumar and restar can be used with only id or any positive amount", () => {
     assert.equal(amount.max_value, 2147483647);
     assert.equal("choices" in amount, false);
   }
+});
+
+test("only borrar requires elevated Discord permissions", () => {
+  assert.deepEqual([...ADMIN_COMMANDS], ["borrar"]);
 });
 
 test("admin permission accepts administrator, manage channels, or manage guild", () => {

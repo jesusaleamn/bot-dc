@@ -75,7 +75,7 @@ async function handleCommand(interaction) {
 
   if (ADMIN_COMMANDS.has(commandName) && !hasInventoryAdminPermission(interaction)) {
     return interactionMessage({
-      content: "❌ Necesitas permiso de administrador, gestionar servidor o gestionar canales.",
+      content: "❌ Solo `/borrar` requiere permiso de administrador, gestionar servidor o gestionar canales.",
     });
   }
 

@@ -148,27 +148,27 @@ Por eso este bot usa:
 
 ## Comandos
 
-Usuarios normales:
-
-```text
-/sumar id:1 cantidad:101
-/restar id:1 cantidad:10
-/ver
-/ayuda
-```
-
-Responsables o administradores:
+Públicos para cualquier usuario que pueda usar comandos en el canal:
 
 ```text
 /inventario nombre:Alquimia
 /crear id:1 nombre:Flor de montaña cantidad:50
+/sumar id:1 cantidad:101
+/restar id:1 cantidad:10
 /editar id:1 nombre:Nuevo nombre
-/borrar id:1
+/ver
 /recrear_inventario
 /historial limite:10
+/ayuda
 ```
 
-Los comandos administrativos requieren que el usuario tenga al menos uno de estos permisos en Discord:
+Protegido:
+
+```text
+/borrar id:1
+```
+
+Solo `/borrar` requiere que el usuario tenga al menos uno de estos permisos en Discord:
 
 - Administrator
 - Manage Server
