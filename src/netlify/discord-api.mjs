@@ -1,5 +1,5 @@
 import { DISCORD_API_BASE } from "./constants.mjs";
-import { InventoryError, InventoryMessageMissingError } from "./errors.mjs";
+import { BotPermissionError, InventoryError, InventoryMessageMissingError } from "./errors.mjs";
 
 async function discordRequest(path, options = {}) {
   const token = process.env.DISCORD_TOKEN;
@@ -21,7 +21,7 @@ async function discordRequest(path, options = {}) {
   }
 
   if (response.status === 403) {
-    throw new InventoryError("❌ No tengo permisos para enviar, leer historial o editar el mensaje permanente.");
+    throw new BotPermissionError();
   }
 
   if (!response.ok) {

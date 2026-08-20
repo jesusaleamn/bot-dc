@@ -42,3 +42,10 @@ export class InventoryMessageMissingError extends InventoryError {
   }
 }
 
+export class BotPermissionError extends InventoryError {
+  constructor() {
+    super(
+      "❌ El bot no tiene permisos en este canal para enviar mensajes, insertar enlaces o editar el mensaje permanente. Esto no son tus permisos: un admin debe darle permisos al bot.",
+    );
+  }
+}

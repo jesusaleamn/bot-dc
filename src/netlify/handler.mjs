@@ -18,7 +18,7 @@ import {
   setInventoryMessageId,
   subtractQuantity,
 } from "./database.mjs";
-import { InventoryError, InventoryMessageMissingError } from "./errors.mjs";
+import { BotPermissionError, InventoryError, InventoryMessageMissingError } from "./errors.mjs";
 
 const SUCCESS_MESSAGE = "Listo.";
 
@@ -114,16 +114,25 @@ async function handleCreateInventory(context, options) {
     name: options.nombre,
   });
 
-  const view = await getInventoryView(context);
-  const message = await sendInventoryMessage(
-    context.channelId,
-    buildInventoryEmbed(view.inventory.name, view.items),
-  );
+  try {
+    const view = await getInventoryView(context);
+    const message = await sendInventoryMessage(
+      context.channelId,
+      buildInventoryEmbed(view.inventory.name, view.items),
+    );
 
-  await setInventoryMessageId({
-    ...context,
-    messageId: message.id,
-  });
+    await setInventoryMessageId({
+      ...context,
+      messageId: message.id,
+    });
+  } catch (error) {
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}\n\nEl inventario se ha guardado, pero no puedo publicar el mensaje permanente hasta que el bot tenga permisos en este canal.`,
+      });
+    }
+    throw error;
+  }
 
   return temporarySuccessMessage(context);
 }
@@ -244,6 +253,11 @@ async function refreshThenReply(context, successMessage) {
     if (error instanceof InventoryMessageMissingError) {
       return interactionMessage({
         content: `${successMessage}\n\n${error.userMessage}`,
+      });
+    }
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${successMessage}\n\n${error.userMessage}\n\nEl cambio se ha guardado, pero no puedo actualizar el mensaje permanente hasta que el bot tenga permisos en este canal.`,
       });
     }
     throw error;
