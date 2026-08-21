@@ -61,6 +61,13 @@ const requesterOption = {
   required: false,
 };
 
+const inventoryChannelOption = {
+  name: "canal",
+  description: "Canal donde esta el inventario que quieres vincular.",
+  type: ApplicationCommandOptionType.CHANNEL,
+  required: true,
+};
+
 const optionalUserOption = {
   name: "usuario",
   description: "Filtra por usuario.",
@@ -160,6 +167,13 @@ export const COMMANDS = [
     description: "Publica o actualiza la tabla de pedidos activos.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
+  },
+  {
+    name: "pedidos_vincular",
+    description: "Vincula este canal de pedidos a un inventario de otro canal.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [inventoryChannelOption],
   },
   {
     name: "pedido_crear",

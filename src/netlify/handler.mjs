@@ -21,9 +21,11 @@ import {
   deleteItem,
   deliverOrder,
   editItemName,
+  getOrderBoardsForInventory,
   getOrdersView,
   getInventoryVersion,
   getInventoryView,
+  linkOrdersBoard,
   listActivitySummary,
   listCompletedOrders,
   listHistory,
@@ -121,6 +123,8 @@ async function handleCommand(interaction) {
       return handleHistory(context, options);
     case "pedidos":
       return handleOrdersBoard(context);
+    case "pedidos_vincular":
+      return handleLinkOrdersBoard(context, options);
     case "pedido_crear":
       return handleCreateOrder(context, options);
     case "pedido_llevar":
@@ -277,6 +281,27 @@ async function handleOrdersBoard(context) {
   return temporarySuccessMessage(context);
 }
 
+async function handleLinkOrdersBoard(context, options) {
+  try {
+    const view = await linkOrdersBoard({
+      ...context,
+      boardChannelId: context.channelId,
+      inventoryChannelId: options.canal,
+    });
+
+    await publishOrdersBoard(context, view);
+  } catch (error) {
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}\n\nLa vinculacion se ha guardado, pero no puedo publicar la tabla de pedidos hasta que el bot tenga permisos en este canal.`,
+      });
+    }
+    throw error;
+  }
+
+  return temporarySuccessMessage(context);
+}
+
 async function handleCreateOrder(context, options) {
   await createOrder({
     ...context,
@@ -355,7 +380,7 @@ async function refreshThenReply(context, successMessage) {
 
 async function refreshOrdersThenReply(context) {
   try {
-    await refreshOrdersBoard(context);
+    await refreshOrdersBoards(context);
     return temporarySuccessMessage(context);
   } catch (error) {
     if (error instanceof OrdersMessageMissingError) {
@@ -372,16 +397,22 @@ async function refreshOrdersThenReply(context) {
   }
 }
 
-async function publishOrdersBoard(context) {
-  const view = await getOrdersView(context);
+async function publishOrdersBoard(context, currentView = null) {
+  const view = currentView ?? (await getOrdersView(context));
+  const messageId = view.board?.messageId ?? view.inventory.orders_message_id;
 
-  if (view.inventory.orders_message_id) {
+  if (messageId) {
     try {
       await editInventoryMessage(
         context.channelId,
-        view.inventory.orders_message_id,
+        messageId,
         buildOrdersEmbed(view),
       );
+      await setOrdersMessageId({
+        ...context,
+        inventoryId: view.inventory.id,
+        messageId,
+      });
       return;
     } catch (error) {
       if (!(error instanceof InventoryMessageMissingError)) {
@@ -393,21 +424,47 @@ async function publishOrdersBoard(context) {
   const message = await sendInventoryMessage(context.channelId, buildOrdersEmbed(view));
   await setOrdersMessageId({
     ...context,
+    inventoryId: view.inventory.id,
     messageId: message.id,
   });
 }
 
-async function refreshOrdersBoard(context) {
+async function refreshOrdersBoards(context) {
   const view = await getOrdersView(context);
-  if (!view.inventory.orders_message_id) {
+  const boards = await getOrderBoardsForInventory({ inventoryId: view.inventory.id });
+  if (!boards.length) {
     throw new OrdersMessageMissingError();
   }
 
-  await editInventoryMessage(
-    context.channelId,
-    view.inventory.orders_message_id,
-    buildOrdersEmbed(view),
-  );
+  let updated = 0;
+  let firstMissingError = null;
+  let firstPermissionError = null;
+
+  for (const board of boards) {
+    try {
+      await editInventoryMessage(board.channelId, board.messageId, buildOrdersEmbed(view));
+      updated += 1;
+    } catch (error) {
+      if (error instanceof InventoryMessageMissingError) {
+        firstMissingError ??= error;
+        continue;
+      }
+      if (error instanceof BotPermissionError) {
+        firstPermissionError ??= error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (updated > 0) {
+    return;
+  }
+
+  if (firstPermissionError) {
+    throw firstPermissionError;
+  }
+  throw firstMissingError ?? new OrdersMessageMissingError();
 }
 
 async function refreshPermanentMessage(context) {

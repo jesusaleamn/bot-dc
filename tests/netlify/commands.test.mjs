@@ -28,6 +28,7 @@ test("registers the expected slash command names", () => {
       "recrear_inventario",
       "historial",
       "pedidos",
+      "pedidos_vincular",
       "pedido_crear",
       "pedido_llevar",
       "pedido_completar",
@@ -66,6 +67,14 @@ test("pedido_crear can assign the request to a Discord user", () => {
 
   assert.equal(user.required, false);
   assert.equal(user.type, 6);
+});
+
+test("pedidos_vincular asks for a Discord channel", () => {
+  const command = commandByName("pedidos_vincular");
+  const channel = optionByName(command, "canal");
+
+  assert.equal(channel.required, true);
+  assert.equal(channel.type, 7);
 });
 
 test("only borrar requires elevated Discord permissions", () => {

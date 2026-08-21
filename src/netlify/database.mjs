@@ -140,6 +140,32 @@ export async function ensureSchema() {
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_orders_inventory_id ON inventory_orders (inventory_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_orders_status ON inventory_orders (status)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_orders_completed_at ON inventory_orders (completed_at)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_order_boards (
+        id BIGSERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        board_channel_id VARCHAR(32) NOT NULL,
+        inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+        message_id VARCHAR(32),
+        created_by VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_order_board_channel UNIQUE (guild_id, board_channel_id)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_order_boards_inventory_id ON inventory_order_boards (inventory_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_order_boards_guild_id ON inventory_order_boards (guild_id)`;
+    await sql`
+      INSERT INTO inventory_order_boards (guild_id, board_channel_id, inventory_id, message_id, created_by)
+      SELECT guild_id, channel_id, id, orders_message_id, created_by
+      FROM inventories
+      WHERE orders_message_id IS NOT NULL
+      ON CONFLICT (guild_id, board_channel_id) DO UPDATE
+      SET
+        inventory_id = EXCLUDED.inventory_id,
+        message_id = COALESCE(inventory_order_boards.message_id, EXCLUDED.message_id),
+        updated_at = NOW()
+    `;
   })();
 
   return schemaReady;
@@ -551,29 +577,24 @@ export async function deleteItem({ guildId, channelId, itemId, userId }) {
   };
 }
 
-export async function setOrdersMessageId({ guildId, channelId, messageId }) {
+export async function linkOrdersBoard({ guildId, boardChannelId, inventoryChannelId, userId }) {
   await ensureSchema();
-  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId: inventoryChannelId });
 
-  const [row] = await sql`
-    UPDATE inventories
-    SET orders_message_id = ${messageId}, updated_at = NOW()
-    WHERE guild_id = ${guildId}
-      AND channel_id = ${channelId}
-    RETURNING id, guild_id, channel_id, name, orders_message_id
-  `;
+  await upsertOrderBoard({
+    guildId,
+    boardChannelId,
+    inventoryId: inventory.id,
+    userId,
+  });
 
-  if (!row) {
-    throw new InventoryNotFoundError();
-  }
-
-  return row;
+  return getOrdersView({ guildId, channelId: boardChannelId });
 }
 
 export async function getOrdersView({ guildId, channelId }) {
   await ensureSchema();
   const sql = getSql();
-  const inventory = await requireInventory({ guildId, channelId });
+  const inventory = await resolveOrderInventory({ guildId, channelId });
 
   const activeOrders = await sql`
     SELECT
@@ -603,33 +624,80 @@ export async function getOrdersView({ guildId, channelId }) {
 
   return {
     inventory,
+    board: {
+      channelId: inventory.orders_channel_id,
+      messageId: inventory.orders_message_id,
+    },
     orders: activeOrders.map(normalizeOrder),
     completedThisWeek: Number(stats?.completed_this_week ?? 0),
     completedTotal: Number(stats?.completed_total ?? 0),
   };
 }
 
-export async function createOrder({ guildId, channelId, itemId, quantity, requesterUserId, userId }) {
+export async function getOrderBoardsForInventory({ inventoryId }) {
   await ensureSchema();
   const sql = getSql();
 
+  const rows = await sql`
+    SELECT board_channel_id, message_id
+    FROM inventory_order_boards
+    WHERE inventory_id = ${inventoryId}
+      AND message_id IS NOT NULL
+    ORDER BY board_channel_id ASC
+  `;
+
+  return rows.map((row) => ({
+    channelId: row.board_channel_id,
+    messageId: row.message_id,
+  }));
+}
+
+export async function setOrdersMessageId({ guildId, channelId, inventoryId = null, messageId, userId = null }) {
+  await ensureSchema();
+  const inventory = inventoryId
+    ? await requireInventoryById({ guildId, inventoryId })
+    : await resolveOrderInventory({ guildId, channelId });
+
+  const board = await upsertOrderBoard({
+    guildId,
+    boardChannelId: channelId,
+    inventoryId: inventory.id,
+    messageId,
+    userId,
+  });
+
+  if (channelId === inventory.channel_id) {
+    const sql = getSql();
+    await sql`
+      UPDATE inventories
+      SET orders_message_id = ${messageId}, updated_at = NOW()
+      WHERE id = ${inventory.id}
+    `;
+  }
+
+  return {
+    ...inventory,
+    orders_channel_id: board.board_channel_id,
+    orders_message_id: board.message_id,
+  };
+}
+
+export async function createOrder({ guildId, channelId, itemId, quantity, requesterUserId, userId }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await resolveOrderInventory({ guildId, channelId });
+
   const [row] = await sql`
-    WITH inv AS (
-      SELECT id, guild_id, channel_id
-      FROM inventories
-      WHERE guild_id = ${guildId}
-        AND channel_id = ${channelId}
-    ),
-    item AS (
+    WITH item AS (
       SELECT item_id, name
       FROM inventory_items
-      WHERE inventory_id = (SELECT id FROM inv)
+      WHERE inventory_id = ${inventory.id}
         AND item_id = ${itemId}
     ),
     next_order AS (
       SELECT COALESCE(MAX(order_no), 0) + 1 AS order_no
       FROM inventory_orders
-      WHERE inventory_id = (SELECT id FROM inv)
+      WHERE inventory_id = ${inventory.id}
     ),
     inserted AS (
       INSERT INTO inventory_orders (
@@ -642,14 +710,14 @@ export async function createOrder({ guildId, channelId, itemId, quantity, reques
         created_by
       )
       SELECT
-        inv.id,
+        ${inventory.id},
         next_order.order_no,
         ${requesterUserId},
         item.item_id,
         item.name,
         ${quantity},
         ${userId}
-      FROM inv, item, next_order
+      FROM item, next_order
       RETURNING
         order_no,
         requester_user_id,
@@ -664,7 +732,6 @@ export async function createOrder({ guildId, channelId, itemId, quantity, reques
   `;
 
   if (!row) {
-    await requireInventory({ guildId, channelId });
     throw new ItemNotFoundError(itemId);
   }
 
@@ -674,6 +741,7 @@ export async function createOrder({ guildId, channelId, itemId, quantity, reques
 export async function deliverOrder({ guildId, channelId, orderNo, amount }) {
   await ensureSchema();
   const sql = getSql();
+  const inventory = await resolveOrderInventory({ guildId, channelId });
 
   const [row] = await sql`
     WITH target AS (
@@ -682,9 +750,7 @@ export async function deliverOrder({ guildId, channelId, orderNo, amount }) {
         order_row.requested_quantity,
         order_row.delivered_quantity
       FROM inventory_orders order_row
-      JOIN inventories inv ON inv.id = order_row.inventory_id
-      WHERE inv.guild_id = ${guildId}
-        AND inv.channel_id = ${channelId}
+      WHERE order_row.inventory_id = ${inventory.id}
         AND order_row.order_no = ${orderNo}
         AND order_row.status = 'active'
     ),
@@ -719,7 +785,6 @@ export async function deliverOrder({ guildId, channelId, orderNo, amount }) {
   `;
 
   if (!row) {
-    await requireInventory({ guildId, channelId });
     throw new OrderNotFoundError(orderNo);
   }
 
@@ -729,14 +794,13 @@ export async function deliverOrder({ guildId, channelId, orderNo, amount }) {
 export async function completeOrder({ guildId, channelId, orderNo }) {
   await ensureSchema();
   const sql = getSql();
+  const inventory = await resolveOrderInventory({ guildId, channelId });
 
   const [row] = await sql`
     WITH target AS (
       SELECT order_row.id AS row_id
       FROM inventory_orders order_row
-      JOIN inventories inv ON inv.id = order_row.inventory_id
-      WHERE inv.guild_id = ${guildId}
-        AND inv.channel_id = ${channelId}
+      WHERE order_row.inventory_id = ${inventory.id}
         AND order_row.order_no = ${orderNo}
         AND order_row.status = 'active'
     ),
@@ -765,7 +829,6 @@ export async function completeOrder({ guildId, channelId, orderNo }) {
   `;
 
   if (!row) {
-    await requireInventory({ guildId, channelId });
     throw new OrderNotFoundError(orderNo);
   }
 
@@ -775,7 +838,7 @@ export async function completeOrder({ guildId, channelId, orderNo }) {
 export async function listCompletedOrders({ guildId, channelId, limit = 10 }) {
   await ensureSchema();
   const sql = getSql();
-  const inventory = await requireInventory({ guildId, channelId });
+  const inventory = await resolveOrderInventory({ guildId, channelId });
 
   const rows = await sql`
     SELECT
@@ -801,7 +864,7 @@ export async function listCompletedOrders({ guildId, channelId, limit = 10 }) {
 export async function listActivitySummary({ guildId, channelId, userId = null, itemId = null, limit = 12 }) {
   await ensureSchema();
   const sql = getSql();
-  const inventory = await requireInventory({ guildId, channelId });
+  const inventory = await resolveOrderInventory({ guildId, channelId });
 
   const rows = await sql`
     SELECT
@@ -873,10 +936,85 @@ export async function listHistory({ guildId, channelId, limit = 10 }) {
   }));
 }
 
+async function resolveOrderInventory({ guildId, channelId }) {
+  const sql = getSql();
+  const [linked] = await sql`
+    SELECT
+      inv.id,
+      inv.guild_id,
+      inv.channel_id,
+      inv.name,
+      inv.message_id,
+      inv.orders_message_id,
+      inv.version,
+      board.board_channel_id AS orders_channel_id,
+      board.message_id AS board_message_id
+    FROM inventory_order_boards board
+    JOIN inventories inv ON inv.id = board.inventory_id
+    WHERE board.guild_id = ${guildId}
+      AND board.board_channel_id = ${channelId}
+  `;
+
+  if (linked) {
+    return {
+      ...linked,
+      orders_channel_id: linked.orders_channel_id,
+      orders_message_id: linked.board_message_id,
+    };
+  }
+
+  const inventory = await requireInventory({ guildId, channelId });
+  const [board] = await sql`
+    SELECT board_channel_id, message_id
+    FROM inventory_order_boards
+    WHERE guild_id = ${guildId}
+      AND board_channel_id = ${channelId}
+      AND inventory_id = ${inventory.id}
+  `;
+
+  return {
+    ...inventory,
+    orders_channel_id: board?.board_channel_id ?? channelId,
+    orders_message_id: board?.message_id ?? inventory.orders_message_id ?? null,
+  };
+}
+
+async function requireInventoryById({ guildId, inventoryId }) {
+  const sql = getSql();
+  const [inventory] = await sql`
+    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
+    FROM inventories
+    WHERE guild_id = ${guildId}
+      AND id = ${inventoryId}
+  `;
+
+  if (!inventory) {
+    throw new InventoryNotFoundError();
+  }
+
+  return inventory;
+}
+
+async function upsertOrderBoard({ guildId, boardChannelId, inventoryId, messageId = null, userId = null }) {
+  const sql = getSql();
+  const [board] = await sql`
+    INSERT INTO inventory_order_boards (guild_id, board_channel_id, inventory_id, message_id, created_by)
+    VALUES (${guildId}, ${boardChannelId}, ${inventoryId}, ${messageId}, ${userId ?? "0"})
+    ON CONFLICT (guild_id, board_channel_id) DO UPDATE
+    SET
+      inventory_id = EXCLUDED.inventory_id,
+      message_id = COALESCE(EXCLUDED.message_id, inventory_order_boards.message_id),
+      updated_at = NOW()
+    RETURNING board_channel_id, message_id
+  `;
+
+  return board;
+}
+
 async function requireInventory({ guildId, channelId }) {
   const sql = getSql();
   const [inventory] = await sql`
-    SELECT id, guild_id, channel_id, name, message_id, version
+    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
     FROM inventories
     WHERE guild_id = ${guildId}
       AND channel_id = ${channelId}

@@ -16,7 +16,7 @@ test("renderInventory sorts items by id", () => {
     { item_id: 102, name: "Leña", quantity: 120 },
   ]);
 
-  assert.ok(rendered.description.indexOf("102   Leña") < rendered.description.indexOf("601   Ramas"));
+  assert.ok(rendered.description.indexOf("102 │ Leña") < rendered.description.indexOf("601 │ Ramas"));
   assert.match(rendered.description, /120/);
 });
 

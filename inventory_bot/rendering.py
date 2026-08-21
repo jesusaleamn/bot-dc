@@ -7,6 +7,7 @@ import discord
 from inventory_bot.dtos import InventoryItemDTO
 
 MATERIAL_WIDTH = 28
+QUANTITY_WIDTH = 8
 ITEM_ID_WIDTH = 3
 
 
@@ -31,13 +32,12 @@ def render_inventory(name: str, items: list[InventoryItemDTO]) -> RenderedInvent
         return RenderedInventory(title=title, description="> No hay objetos registrados.")
 
     lines = [
-        f"{'ID':>{ITEM_ID_WIDTH}}   {'MATERIAL':<{MATERIAL_WIDTH}}   {'CANTIDAD':>10}",
-        "",
+        f"{'ID':>{ITEM_ID_WIDTH}} │ {'MATERIAL':<{MATERIAL_WIDTH}} │ {'CANTIDAD':>{QUANTITY_WIDTH}}",
+        f"{'─' * ITEM_ID_WIDTH}─┼─{'─' * MATERIAL_WIDTH}─┼─{'─' * QUANTITY_WIDTH}",
     ]
     for item in sorted(items, key=lambda entry: entry.item_id):
         material = _shorten(item.name, MATERIAL_WIDTH)
-        lines.append(f"{item.item_id:>{ITEM_ID_WIDTH}}   {material:<{MATERIAL_WIDTH}}   {item.quantity:>10}")
-        lines.append("")
+        lines.append(f"{item.item_id:>{ITEM_ID_WIDTH}} │ {material:<{MATERIAL_WIDTH}} │ {item.quantity:>{QUANTITY_WIDTH}}")
 
     return RenderedInventory(title=title, description=f"```text\n{chr(10).join(lines)}\n```")
 

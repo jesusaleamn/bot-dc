@@ -18,5 +18,5 @@ def test_render_inventory_orders_items_by_id() -> None:
         ],
     )
 
-    assert rendered.description.index("102   Leña") < rendered.description.index("601   Ramas")
+    assert rendered.description.index("102 │ Leña") < rendered.description.index("601 │ Ramas")
     assert "120" in rendered.description

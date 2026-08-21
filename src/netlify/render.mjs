@@ -1,7 +1,7 @@
 import { ITEM_ID_WIDTH } from "./constants.mjs";
 
-const MATERIAL_WIDTH = 30;
-const QUANTITY_WIDTH = 10;
+const MATERIAL_WIDTH = 28;
+const QUANTITY_WIDTH = 8;
 
 function shorten(value, width) {
   const clean = value.trim();
@@ -25,15 +25,14 @@ export function renderInventory(name, items) {
   }
 
   const lines = [
-    `${"ID".padStart(ITEM_ID_WIDTH)}   ${"MATERIAL".padEnd(MATERIAL_WIDTH)}   ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
-    "",
+    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
+    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(QUANTITY_WIDTH)}`,
   ];
 
   for (const item of [...items].sort((a, b) => a.item_id - b.item_id)) {
     const material = shorten(item.name, MATERIAL_WIDTH);
     lines.push(
-      `${String(item.item_id).padStart(ITEM_ID_WIDTH)}   ${material.padEnd(MATERIAL_WIDTH)}   ${String(item.quantity).padStart(QUANTITY_WIDTH)}`,
-      "",
+      `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`,
     );
   }
 
@@ -84,7 +83,7 @@ export function buildOrdersEmbed({ inventory, orders, completedThisWeek, complet
     description: description.join("\n\n"),
     color: 0x2f855a,
     footer: {
-      text: "Pedidos activos del canal",
+      text: "Pedidos vinculados al inventario",
     },
   };
 }
@@ -153,6 +152,7 @@ export function buildHelpEmbed() {
       "`/recrear_inventario` vuelve a publicar el mensaje fijo.",
       "`/historial limite:10` muestra cambios recientes.",
       "`/pedidos` publica o actualiza la tabla de pedidos.",
+      "`/pedidos_vincular canal:#alquimia` vincula este canal a otro inventario.",
       "`/pedido_crear id:101 cantidad:120 usuario:@alguien` crea un pedido.",
       "`/pedido_llevar pedido:1 cantidad:20` suma cantidad llevada.",
       "`/actividad` resume sumas y restas por usuario.",
