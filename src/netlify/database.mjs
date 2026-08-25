@@ -181,7 +181,7 @@ export async function createInventory({ guildId, channelId, name, userId }) {
       INSERT INTO inventories (guild_id, channel_id, name, created_by)
       VALUES (${guildId}, ${channelId}, ${cleanedName}, ${userId})
       ON CONFLICT (guild_id, channel_id) DO NOTHING
-      RETURNING id, guild_id, channel_id, name, message_id, version
+      RETURNING id, guild_id, channel_id, name, message_id, orders_message_id, version
     ),
     history AS (
       INSERT INTO inventory_history (inventory_id, guild_id, channel_id, operation, user_id)
@@ -213,7 +213,7 @@ export async function setInventoryMessageId({ guildId, channelId, messageId, use
         updated_at = NOW()
       WHERE guild_id = ${guildId}
         AND channel_id = ${channelId}
-      RETURNING id, guild_id, channel_id, name, message_id, version
+      RETURNING id, guild_id, channel_id, name, message_id, orders_message_id, version
     ),
     history AS (
       INSERT INTO inventory_history (inventory_id, guild_id, channel_id, operation, user_id)
