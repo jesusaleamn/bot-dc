@@ -6,6 +6,7 @@ import { httpJson, interactionMessage, pongResponse } from "./responses.mjs";
 import {
   buildActivityEmbed,
   buildCompletedOrdersEmbed,
+  buildGeneralInventoryEmbeds,
   buildHelpEmbed,
   buildInventoryEmbed,
   buildOrdersEmbed,
@@ -21,7 +22,11 @@ import {
   deleteItem,
   deliverOrder,
   editItemName,
+  getGeneralBoard,
+  getGeneralBoards,
+  getGeneralInventoryView,
   getOrderBoardsForInventory,
+  getInventoryByTableId,
   getOrdersView,
   getInventoryVersion,
   getInventoryView,
@@ -29,8 +34,10 @@ import {
   listActivitySummary,
   listCompletedOrders,
   listHistory,
+  setGeneralBoardMessageId,
   setOrdersMessageId,
   setInventoryMessageId,
+  setItemPriority,
   subtractQuantity,
 } from "./database.mjs";
 import {
@@ -121,6 +128,16 @@ async function handleCommand(interaction) {
       return handleRecreate(context);
     case "historial":
       return handleHistory(context, options);
+    case "prioridad":
+      return handlePriority(context, options);
+    case "general":
+      return handleGeneralBoard(context);
+    case "general_sumar":
+      return handleGeneralAdd(context, options);
+    case "general_restar":
+      return handleGeneralSubtract(context, options);
+    case "general_prioridad":
+      return handleGeneralPriority(context, options);
     case "pedidos":
       return handleOrdersBoard(context);
     case "pedidos_vincular":
@@ -152,13 +169,14 @@ async function handleCreateInventory(context, options) {
     const view = await getInventoryView(context);
     const message = await sendInventoryMessage(
       context.channelId,
-      buildInventoryEmbed(view.inventory.name, view.items),
+      buildInventoryEmbed(view.inventory, view.items),
     );
 
     await setInventoryMessageId({
       ...context,
       messageId: message.id,
     });
+    await refreshGeneralBoardsBestEffort(context);
   } catch (error) {
     if (error instanceof BotPermissionError) {
       return interactionMessage({
@@ -224,7 +242,7 @@ async function handleDelete(context, options) {
 async function handleView(context) {
   const view = await getInventoryView(context);
   return interactionMessage({
-    embeds: [buildInventoryEmbed(view.inventory.name, view.items)],
+    embeds: [buildInventoryEmbed(view.inventory, view.items)],
   });
 }
 
@@ -236,8 +254,9 @@ async function handleRecreate(context) {
       await editInventoryMessage(
         context.channelId,
         view.inventory.message_id,
-        buildInventoryEmbed(view.inventory.name, view.items),
+        buildInventoryEmbed(view.inventory, view.items),
       );
+      await refreshGeneralBoardsBestEffort(context);
       return temporarySuccessMessage(context);
     } catch (error) {
       if (!(error instanceof InventoryMessageMissingError)) {
@@ -248,13 +267,14 @@ async function handleRecreate(context) {
 
   const message = await sendInventoryMessage(
     context.channelId,
-    buildInventoryEmbed(view.inventory.name, view.items),
+    buildInventoryEmbed(view.inventory, view.items),
   );
   await setInventoryMessageId({
     ...context,
     messageId: message.id,
     recordRecreate: true,
   });
+  await refreshGeneralBoardsBestEffort(context);
 
   return temporarySuccessMessage(context);
 }
@@ -274,6 +294,54 @@ async function handleHistory(context, options) {
       },
     ],
   });
+}
+
+async function handlePriority(context, options) {
+  await setItemPriority({
+    ...context,
+    itemId: options.id,
+    priority: options.nivel,
+  });
+
+  return refreshThenReply(context, SUCCESS_MESSAGE);
+}
+
+async function handleGeneralBoard(context) {
+  await publishGeneralBoard(context);
+  return temporarySuccessMessage(context);
+}
+
+async function handleGeneralAdd(context, options) {
+  const inventoryContext = await contextForInventoryTable(context, options.tabla);
+  await addQuantity({
+    ...inventoryContext,
+    itemId: options.id,
+    amount: options.cantidad,
+  });
+
+  return refreshThenReply(inventoryContext, SUCCESS_MESSAGE);
+}
+
+async function handleGeneralSubtract(context, options) {
+  const inventoryContext = await contextForInventoryTable(context, options.tabla);
+  await subtractQuantity({
+    ...inventoryContext,
+    itemId: options.id,
+    amount: options.cantidad,
+  });
+
+  return refreshThenReply(inventoryContext, SUCCESS_MESSAGE);
+}
+
+async function handleGeneralPriority(context, options) {
+  const inventoryContext = await contextForInventoryTable(context, options.tabla);
+  await setItemPriority({
+    ...inventoryContext,
+    itemId: options.id,
+    priority: options.nivel,
+  });
+
+  return refreshThenReply(inventoryContext, SUCCESS_MESSAGE);
 }
 
 async function handleOrdersBoard(context) {
@@ -357,24 +425,82 @@ async function handleActivity(context, options) {
 }
 
 async function refreshThenReply(context, successMessage) {
+  let inventoryRefreshError = null;
+
   try {
     await refreshPermanentMessage(context);
-    if (successMessage === SUCCESS_MESSAGE) {
-      return temporarySuccessMessage(context);
-    }
-    return interactionMessage({ content: successMessage });
   } catch (error) {
-    if (error instanceof InventoryMessageMissingError) {
-      return interactionMessage({
-        content: `${successMessage}\n\n${error.userMessage}`,
-      });
+    if (error instanceof InventoryMessageMissingError || error instanceof BotPermissionError) {
+      inventoryRefreshError = error;
+    } else {
+      throw error;
     }
-    if (error instanceof BotPermissionError) {
-      return interactionMessage({
-        content: `${successMessage}\n\n${error.userMessage}\n\nEl cambio se ha guardado, pero no puedo actualizar el mensaje permanente hasta que el bot tenga permisos en este canal.`,
+  }
+
+  await refreshGeneralBoardsBestEffort(context);
+
+  if (inventoryRefreshError instanceof InventoryMessageMissingError) {
+    return interactionMessage({
+      content: `${successMessage}\n\n${inventoryRefreshError.userMessage}`,
+    });
+  }
+  if (inventoryRefreshError instanceof BotPermissionError) {
+    return interactionMessage({
+      content: `${successMessage}\n\n${inventoryRefreshError.userMessage}\n\nEl cambio se ha guardado, pero no puedo actualizar el mensaje permanente hasta que el bot tenga permisos en el canal del inventario.`,
+    });
+  }
+
+  if (successMessage === SUCCESS_MESSAGE) {
+    return temporarySuccessMessage(context);
+  }
+  return interactionMessage({ content: successMessage });
+}
+
+async function publishGeneralBoard(context) {
+  const view = await getGeneralInventoryView(context);
+  const embeds = buildGeneralInventoryEmbeds(view);
+  const board = await getGeneralBoard(context);
+
+  if (board?.messageId) {
+    try {
+      await editInventoryMessage(context.channelId, board.messageId, embeds);
+      await setGeneralBoardMessageId({
+        ...context,
+        messageId: board.messageId,
       });
+      return;
+    } catch (error) {
+      if (!(error instanceof InventoryMessageMissingError)) {
+        throw error;
+      }
     }
-    throw error;
+  }
+
+  const message = await sendInventoryMessage(context.channelId, embeds);
+  await setGeneralBoardMessageId({
+    ...context,
+    messageId: message.id,
+  });
+}
+
+async function refreshGeneralBoardsBestEffort(context) {
+  const boards = await getGeneralBoards(context);
+  if (!boards.length) {
+    return;
+  }
+
+  const view = await getGeneralInventoryView(context);
+  const embeds = buildGeneralInventoryEmbeds(view);
+
+  for (const board of boards) {
+    try {
+      await editInventoryMessage(board.channelId, board.messageId, embeds);
+    } catch (error) {
+      if (error instanceof InventoryMessageMissingError || error instanceof BotPermissionError) {
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
@@ -467,6 +593,18 @@ async function refreshOrdersBoards(context) {
   throw firstMissingError ?? new OrdersMessageMissingError();
 }
 
+async function contextForInventoryTable(context, tableId) {
+  const inventory = await getInventoryByTableId({
+    guildId: context.guildId,
+    tableId,
+  });
+
+  return {
+    ...context,
+    channelId: inventory.channel_id,
+  };
+}
+
 async function refreshPermanentMessage(context) {
   let lastView = null;
 
@@ -479,7 +617,7 @@ async function refreshPermanentMessage(context) {
     await editInventoryMessage(
       context.channelId,
       view.inventory.message_id,
-      buildInventoryEmbed(view.inventory.name, view.items),
+      buildInventoryEmbed(view.inventory, view.items),
     );
 
     lastView = view;
@@ -494,7 +632,7 @@ async function refreshPermanentMessage(context) {
     await editInventoryMessage(
       context.channelId,
       latest.inventory.message_id,
-      buildInventoryEmbed(latest.inventory.name, latest.items),
+      buildInventoryEmbed(latest.inventory, latest.items),
     );
   }
 }
@@ -547,6 +685,9 @@ function formatHistory(entries) {
 }
 
 function formatChange(entry) {
+  if (entry.operation === "prioridad" && entry.before_name !== null && entry.after_name !== null) {
+    return ` (${formatPriorityHistory(entry.before_name)} → ${formatPriorityHistory(entry.after_name)})`;
+  }
   if (entry.before_quantity !== null && entry.after_quantity !== null) {
     return ` (${entry.before_quantity} → ${entry.after_quantity})`;
   }
@@ -557,4 +698,17 @@ function formatChange(entry) {
     return ` (${entry.before_quantity} → borrado)`;
   }
   return "";
+}
+
+function formatPriorityHistory(priority) {
+  switch (priority) {
+    case "high":
+      return "alta";
+    case "medium":
+      return "media";
+    case "low":
+      return "baja";
+    default:
+      return "ninguna";
+  }
 }

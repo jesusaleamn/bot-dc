@@ -54,6 +54,28 @@ const orderNumberOption = {
   max_value: 2147483647,
 };
 
+const inventoryTableOption = {
+  name: "tabla",
+  description: "ID de la tabla de inventario, por ejemplo 101.",
+  type: ApplicationCommandOptionType.INTEGER,
+  required: true,
+  min_value: 101,
+  max_value: 2147483647,
+};
+
+const priorityOption = {
+  name: "nivel",
+  description: "Prioridad visual del objeto.",
+  type: ApplicationCommandOptionType.STRING,
+  required: true,
+  choices: [
+    { name: "🔴 Alta", value: "high" },
+    { name: "🟠 Media", value: "medium" },
+    { name: "🟢 Baja", value: "low" },
+    { name: "⚪ Ninguna", value: "none" },
+  ],
+};
+
 const requesterOption = {
   name: "usuario",
   description: "Quien pide el material. Si lo dejas vacio eres tu.",
@@ -161,6 +183,40 @@ export const COMMANDS = [
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
     options: [optionalLimitOption],
+  },
+  {
+    name: "prioridad",
+    description: "Marca la prioridad visual de un objeto del inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [itemIdOption, priorityOption],
+  },
+  {
+    name: "general",
+    description: "Publica o actualiza la tabla general de inventarios.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+  },
+  {
+    name: "general_sumar",
+    description: "Suma cantidad a una tabla de inventario desde el tablero general.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [inventoryTableOption, itemIdOption, requiredAmountOption],
+  },
+  {
+    name: "general_restar",
+    description: "Resta cantidad a una tabla de inventario desde el tablero general.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [inventoryTableOption, itemIdOption, requiredAmountOption],
+  },
+  {
+    name: "general_prioridad",
+    description: "Cambia la prioridad de un objeto desde el tablero general.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [inventoryTableOption, itemIdOption, priorityOption],
   },
   {
     name: "pedidos",

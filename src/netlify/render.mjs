@@ -1,7 +1,16 @@
 import { ITEM_ID_WIDTH } from "./constants.mjs";
 
-const MATERIAL_WIDTH = 28;
+const MATERIAL_WIDTH = 24;
 const QUANTITY_WIDTH = 8;
+const PRIORITY_WIDTH = 2;
+const GENERAL_INVENTORY_LIMIT = 9;
+
+const PRIORITY_META = {
+  high: { icon: "🔴", label: "Alta" },
+  medium: { icon: "🟠", label: "Media" },
+  low: { icon: "🟢", label: "Baja" },
+  none: { icon: "⚪", label: "Ninguna" },
+};
 
 function shorten(value, width) {
   const clean = value.trim();
@@ -13,8 +22,28 @@ function formatSigned(value) {
   return value > 0 ? `+${value}` : String(value);
 }
 
-export function renderInventory(name, items) {
-  const title = `🧪 INVENTARIO — ${name.trim().toUpperCase()}`;
+function inventoryName(inventory) {
+  return typeof inventory === "string" ? inventory : inventory.name;
+}
+
+function inventoryTableId(inventory) {
+  return typeof inventory === "string" ? null : inventory.table_id;
+}
+
+function formatPriorityIcon(priority) {
+  return PRIORITY_META[priority]?.icon ?? PRIORITY_META.none.icon;
+}
+
+function priorityLegend() {
+  return "Prioridad: 🔴 alta · 🟠 media · 🟢 baja · ⚪ ninguna";
+}
+
+export function renderInventory(inventory, items) {
+  const name = inventoryName(inventory);
+  const tableId = inventoryTableId(inventory);
+  const title = tableId
+    ? `🧪 INVENTARIO ${tableId} — ${name.trim().toUpperCase()}`
+    : `🧪 INVENTARIO — ${name.trim().toUpperCase()}`;
 
   if (!items.length) {
     return {
@@ -25,14 +54,14 @@ export function renderInventory(name, items) {
   }
 
   const lines = [
-    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
-    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(QUANTITY_WIDTH)}`,
+    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"P".padEnd(PRIORITY_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
+    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(PRIORITY_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(QUANTITY_WIDTH)}`,
   ];
 
   for (const item of [...items].sort((a, b) => a.item_id - b.item_id)) {
     const material = shorten(item.name, MATERIAL_WIDTH);
     lines.push(
-      `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`,
+      `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${formatPriorityIcon(item.priority).padEnd(PRIORITY_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`,
     );
   }
 
@@ -43,13 +72,47 @@ export function renderInventory(name, items) {
   };
 }
 
-export function buildInventoryEmbed(name, items) {
+export function buildInventoryEmbed(inventory, items) {
   return {
-    ...renderInventory(name, items),
+    ...renderInventory(inventory, items),
     footer: {
-      text: "Inventario compartido de este canal",
+      text: `Inventario compartido de este canal · ${priorityLegend()}`,
     },
   };
+}
+
+export function buildGeneralInventoryEmbeds({ inventories }) {
+  if (!inventories.length) {
+    return [
+      {
+        title: "📚 TABLA GENERAL",
+        description: "> No hay inventarios creados en este servidor.",
+        color: 0x5865f2,
+      },
+    ];
+  }
+
+  const visibleInventories = inventories.slice(0, GENERAL_INVENTORY_LIMIT);
+  const embeds = visibleInventories.map((inventory) => {
+    const rendered = renderInventory(inventory, inventory.items);
+    return {
+      ...rendered,
+      title: `📚 TABLA ${inventory.table_id} — ${inventory.name.trim().toUpperCase()}`,
+      footer: {
+        text: `Canal <#${inventory.channel_id}> · ${priorityLegend()}`,
+      },
+    };
+  });
+
+  if (inventories.length > visibleInventories.length) {
+    embeds.push({
+      title: "📚 Más tablas",
+      description: `Hay ${inventories.length - visibleInventories.length} inventarios más. Crea otra tabla general si necesitas separarlos por canal.`,
+      color: 0x5865f2,
+    });
+  }
+
+  return embeds;
 }
 
 export function buildOrdersEmbed({ inventory, orders, completedThisWeek, completedTotal }) {
@@ -151,6 +214,11 @@ export function buildHelpEmbed() {
       "`/ver` muestra el inventario solo para ti.",
       "`/recrear_inventario` vuelve a publicar el mensaje fijo.",
       "`/historial limite:10` muestra cambios recientes.",
+      "`/prioridad id:1 nivel:alta` marca la prioridad de un objeto.",
+      "`/general` publica o actualiza la tabla general del servidor.",
+      "`/general_sumar tabla:101 id:1 cantidad:10` suma desde la tabla general.",
+      "`/general_restar tabla:101 id:1 cantidad:10` resta desde la tabla general.",
+      "`/general_prioridad tabla:101 id:1 nivel:alta` cambia prioridad desde la tabla general.",
       "`/pedidos` publica o actualiza la tabla de pedidos.",
       "`/pedidos_vincular canal:#alquimia` vincula este canal a otro inventario.",
       "`/pedido_crear id:101 cantidad:120 usuario:@alguien` crea un pedido.",

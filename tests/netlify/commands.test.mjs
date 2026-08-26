@@ -27,6 +27,11 @@ test("registers the expected slash command names", () => {
       "ver",
       "recrear_inventario",
       "historial",
+      "prioridad",
+      "general",
+      "general_sumar",
+      "general_restar",
+      "general_prioridad",
       "pedidos",
       "pedidos_vincular",
       "pedido_crear",
@@ -52,7 +57,18 @@ test("sumar and restar can be used with only id or any positive amount", () => {
 });
 
 test("item ids can use three digits", () => {
-  for (const commandName of ["crear", "sumar", "restar", "editar", "borrar", "pedido_crear"]) {
+  for (const commandName of [
+    "crear",
+    "sumar",
+    "restar",
+    "editar",
+    "borrar",
+    "prioridad",
+    "general_sumar",
+    "general_restar",
+    "general_prioridad",
+    "pedido_crear",
+  ]) {
     const command = commandByName(commandName);
     const id = optionByName(command, "id");
 
@@ -67,6 +83,28 @@ test("pedido_crear can assign the request to a Discord user", () => {
 
   assert.equal(user.required, false);
   assert.equal(user.type, 6);
+});
+
+test("general commands target a table id", () => {
+  for (const commandName of ["general_sumar", "general_restar", "general_prioridad"]) {
+    const command = commandByName(commandName);
+    const table = optionByName(command, "tabla");
+
+    assert.equal(table.required, true);
+    assert.equal(table.min_value, 101);
+  }
+});
+
+test("priority commands offer fixed priority choices", () => {
+  for (const commandName of ["prioridad", "general_prioridad"]) {
+    const command = commandByName(commandName);
+    const priority = optionByName(command, "nivel");
+
+    assert.deepEqual(
+      priority.choices.map((choice) => choice.value),
+      ["high", "medium", "low", "none"],
+    );
+  }
 });
 
 test("pedidos_vincular asks for a Discord channel", () => {

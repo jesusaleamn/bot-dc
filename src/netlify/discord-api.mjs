@@ -37,20 +37,24 @@ async function discordRequest(path, options = {}) {
   return response.json();
 }
 
-export async function sendInventoryMessage(channelId, embed) {
+function normalizeEmbeds(embedOrEmbeds) {
+  return Array.isArray(embedOrEmbeds) ? embedOrEmbeds : [embedOrEmbeds];
+}
+
+export async function sendInventoryMessage(channelId, embedOrEmbeds) {
   return discordRequest(`/channels/${channelId}/messages`, {
     method: "POST",
     body: JSON.stringify({
-      embeds: [embed],
+      embeds: normalizeEmbeds(embedOrEmbeds),
     }),
   });
 }
 
-export async function editInventoryMessage(channelId, messageId, embed) {
+export async function editInventoryMessage(channelId, messageId, embedOrEmbeds) {
   return discordRequest(`/channels/${channelId}/messages/${messageId}`, {
     method: "PATCH",
     body: JSON.stringify({
-      embeds: [embed],
+      embeds: normalizeEmbeds(embedOrEmbeds),
     }),
   });
 }

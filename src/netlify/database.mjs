@@ -62,6 +62,46 @@ export async function ensureSchema() {
     await sql`CREATE INDEX IF NOT EXISTS ix_inventories_guild_id ON inventories (guild_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventories_channel_id ON inventories (channel_id)`;
     await sql`ALTER TABLE inventories ADD COLUMN IF NOT EXISTS orders_message_id VARCHAR(32)`;
+    await sql`ALTER TABLE inventories ADD COLUMN IF NOT EXISTS table_id INTEGER`;
+    await sql`
+      WITH guild_offsets AS (
+        SELECT guild_id, COALESCE(MAX(table_id), 100) AS max_table_id
+        FROM inventories
+        GROUP BY guild_id
+      ),
+      numbered AS (
+        SELECT
+          inv.id,
+          guild_offsets.max_table_id
+            + ROW_NUMBER() OVER (PARTITION BY inv.guild_id ORDER BY inv.created_at ASC, inv.id ASC) AS next_table_id
+        FROM inventories inv
+        JOIN guild_offsets ON guild_offsets.guild_id = inv.guild_id
+        WHERE inv.table_id IS NULL
+      )
+      UPDATE inventories inv
+      SET table_id = numbered.next_table_id
+      FROM numbered
+      WHERE inv.id = numbered.id
+    `;
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid = 'inventories'::regclass
+            AND conname = 'ck_inventory_table_id'
+        ) THEN
+          ALTER TABLE inventories
+          ADD CONSTRAINT ck_inventory_table_id CHECK (table_id IS NULL OR table_id >= 101);
+        END IF;
+      END $$;
+    `;
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_inventories_guild_table_id
+      ON inventories (guild_id, table_id)
+      WHERE table_id IS NOT NULL
+    `;
     await sql`
       CREATE TABLE IF NOT EXISTS inventory_items (
         id BIGSERIAL PRIMARY KEY,
@@ -94,6 +134,24 @@ export async function ensureSchema() {
       END $$;
     `;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_items_inventory_id ON inventory_items (inventory_id)`;
+    await sql`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS priority VARCHAR(16) NOT NULL DEFAULT 'none'`;
+    await sql`UPDATE inventory_items SET priority = 'none' WHERE priority IS NULL`;
+    await sql`ALTER TABLE inventory_items ALTER COLUMN priority SET DEFAULT 'none'`;
+    await sql`ALTER TABLE inventory_items ALTER COLUMN priority SET NOT NULL`;
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid = 'inventory_items'::regclass
+            AND conname = 'ck_inventory_item_priority'
+        ) THEN
+          ALTER TABLE inventory_items
+          ADD CONSTRAINT ck_inventory_item_priority CHECK (priority IN ('none', 'high', 'medium', 'low'));
+        END IF;
+      END $$;
+    `;
     await sql`
       CREATE TABLE IF NOT EXISTS inventory_history (
         id BIGSERIAL PRIMARY KEY,
@@ -166,6 +224,19 @@ export async function ensureSchema() {
         message_id = COALESCE(inventory_order_boards.message_id, EXCLUDED.message_id),
         updated_at = NOW()
     `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_general_boards (
+        id BIGSERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        message_id VARCHAR(32),
+        created_by VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_general_board_channel UNIQUE (guild_id, channel_id)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_general_boards_guild_id ON inventory_general_boards (guild_id)`;
   })();
 
   return schemaReady;
@@ -177,11 +248,17 @@ export async function createInventory({ guildId, channelId, name, userId }) {
   const cleanedName = cleanName(name);
 
   const [row] = await sql`
-    WITH inserted AS (
-      INSERT INTO inventories (guild_id, channel_id, name, created_by)
-      VALUES (${guildId}, ${channelId}, ${cleanedName}, ${userId})
+    WITH next_table AS (
+      SELECT COALESCE(MAX(table_id), 100) + 1 AS table_id
+      FROM inventories
+      WHERE guild_id = ${guildId}
+    ),
+    inserted AS (
+      INSERT INTO inventories (guild_id, channel_id, table_id, name, created_by)
+      SELECT ${guildId}, ${channelId}, next_table.table_id, ${cleanedName}, ${userId}
+      FROM next_table
       ON CONFLICT (guild_id, channel_id) DO NOTHING
-      RETURNING id, guild_id, channel_id, name, message_id, orders_message_id, version
+      RETURNING id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
     ),
     history AS (
       INSERT INTO inventory_history (inventory_id, guild_id, channel_id, operation, user_id)
@@ -189,7 +266,7 @@ export async function createInventory({ guildId, channelId, name, userId }) {
       FROM inserted
       RETURNING id
     )
-    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
+    SELECT id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
     FROM inserted
   `;
 
@@ -213,7 +290,7 @@ export async function setInventoryMessageId({ guildId, channelId, messageId, use
         updated_at = NOW()
       WHERE guild_id = ${guildId}
         AND channel_id = ${channelId}
-      RETURNING id, guild_id, channel_id, name, message_id, orders_message_id, version
+      RETURNING id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
     ),
     history AS (
       INSERT INTO inventory_history (inventory_id, guild_id, channel_id, operation, user_id)
@@ -222,7 +299,7 @@ export async function setInventoryMessageId({ guildId, channelId, messageId, use
       WHERE ${recordRecreate}
       RETURNING id
     )
-    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
+    SELECT id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
     FROM updated
   `;
 
@@ -237,7 +314,7 @@ export async function getInventoryView({ guildId, channelId }) {
   await ensureSchema();
   const sql = getSql();
   const [inventory] = await sql`
-    SELECT id, guild_id, channel_id, name, message_id, version
+    SELECT id, guild_id, channel_id, table_id, name, message_id, version
     FROM inventories
     WHERE guild_id = ${guildId}
       AND channel_id = ${channelId}
@@ -248,7 +325,7 @@ export async function getInventoryView({ guildId, channelId }) {
   }
 
   const items = await sql`
-    SELECT item_id, name, quantity
+    SELECT item_id, name, quantity, priority
     FROM inventory_items
     WHERE inventory_id = ${inventory.id}
     ORDER BY item_id ASC
@@ -256,11 +333,7 @@ export async function getInventoryView({ guildId, channelId }) {
 
   return {
     inventory,
-    items: items.map((item) => ({
-      item_id: Number(item.item_id),
-      name: item.name,
-      quantity: Number(item.quantity),
-    })),
+    items: items.map(normalizeItem),
   };
 }
 
@@ -277,6 +350,110 @@ export async function getInventoryVersion({ guildId, channelId }) {
     throw new InventoryNotFoundError();
   }
   return Number(row.version);
+}
+
+export async function getInventoryByTableId({ guildId, tableId }) {
+  await ensureSchema();
+  const inventory = await requireInventoryByTableId({ guildId, tableId });
+  return inventory;
+}
+
+export async function getGeneralInventoryView({ guildId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const inventories = await sql`
+    SELECT id, guild_id, channel_id, table_id, name, message_id, version
+    FROM inventories
+    WHERE guild_id = ${guildId}
+    ORDER BY table_id ASC, created_at ASC, id ASC
+  `;
+
+  if (!inventories.length) {
+    return { inventories: [] };
+  }
+
+  const items = await sql`
+    SELECT
+      inv.id AS inventory_id,
+      item.item_id,
+      item.name,
+      item.quantity,
+      item.priority
+    FROM inventory_items item
+    JOIN inventories inv ON inv.id = item.inventory_id
+    WHERE inv.guild_id = ${guildId}
+    ORDER BY inv.table_id ASC, item.item_id ASC
+  `;
+
+  const itemsByInventory = new Map();
+  for (const item of items) {
+    const inventoryItems = itemsByInventory.get(String(item.inventory_id)) ?? [];
+    inventoryItems.push(normalizeItem(item));
+    itemsByInventory.set(String(item.inventory_id), inventoryItems);
+  }
+
+  return {
+    inventories: inventories.map((inventory) => ({
+      ...inventory,
+      items: itemsByInventory.get(String(inventory.id)) ?? [],
+    })),
+  };
+}
+
+export async function getGeneralBoard({ guildId, channelId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const [board] = await sql`
+    SELECT channel_id, message_id
+    FROM inventory_general_boards
+    WHERE guild_id = ${guildId}
+      AND channel_id = ${channelId}
+  `;
+
+  return board
+    ? {
+        channelId: board.channel_id,
+        messageId: board.message_id,
+      }
+    : null;
+}
+
+export async function getGeneralBoards({ guildId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const rows = await sql`
+    SELECT channel_id, message_id
+    FROM inventory_general_boards
+    WHERE guild_id = ${guildId}
+      AND message_id IS NOT NULL
+    ORDER BY channel_id ASC
+  `;
+
+  return rows.map((row) => ({
+    channelId: row.channel_id,
+    messageId: row.message_id,
+  }));
+}
+
+export async function setGeneralBoardMessageId({ guildId, channelId, messageId, userId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const [board] = await sql`
+    INSERT INTO inventory_general_boards (guild_id, channel_id, message_id, created_by)
+    VALUES (${guildId}, ${channelId}, ${messageId}, ${userId})
+    ON CONFLICT (guild_id, channel_id) DO UPDATE
+    SET message_id = EXCLUDED.message_id, updated_at = NOW()
+    RETURNING channel_id, message_id
+  `;
+
+  return {
+    channelId: board.channel_id,
+    messageId: board.message_id,
+  };
 }
 
 export async function createItem({ guildId, channelId, itemId, name, quantity, userId }) {
@@ -296,7 +473,7 @@ export async function createItem({ guildId, channelId, itemId, name, quantity, u
         INSERT INTO inventory_items (inventory_id, item_id, name, quantity, created_by, updated_by)
         SELECT id, ${itemId}, ${cleanedName}, ${quantity}, ${userId}, ${userId}
         FROM inv
-        RETURNING inventory_id, item_id, name, quantity
+        RETURNING inventory_id, item_id, name, quantity, priority
       ),
       touched AS (
         UPDATE inventories
@@ -314,7 +491,7 @@ export async function createItem({ guildId, channelId, itemId, name, quantity, u
         FROM touched, inserted
         RETURNING id
       )
-      SELECT item_id, name, quantity
+      SELECT item_id, name, quantity, priority
       FROM inserted
     `;
 
@@ -322,11 +499,7 @@ export async function createItem({ guildId, channelId, itemId, name, quantity, u
       throw new InventoryNotFoundError();
     }
 
-    return {
-      item_id: Number(row.item_id),
-      name: row.name,
-      quantity: Number(row.quantity),
-    };
+    return normalizeItem(row);
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new ItemAlreadyExistsError(itemId);
@@ -479,7 +652,8 @@ export async function editItemName({ guildId, channelId, itemId, name, userId })
         target.item_id,
         target.before_name,
         item.name,
-        item.quantity
+        item.quantity,
+        item.priority
     ),
     touched AS (
       UPDATE inventories
@@ -497,7 +671,7 @@ export async function editItemName({ guildId, channelId, itemId, name, userId })
       FROM updated
       RETURNING id
     )
-    SELECT item_id, name, quantity, touched.version
+    SELECT item_id, name, quantity, priority, touched.version
     FROM updated, touched
   `;
 
@@ -506,11 +680,7 @@ export async function editItemName({ guildId, channelId, itemId, name, userId })
     throw new ItemNotFoundError(itemId);
   }
 
-  return {
-    item_id: Number(row.item_id),
-    name: row.name,
-    quantity: Number(row.quantity),
-  };
+  return normalizeItem(row);
 }
 
 export async function deleteItem({ guildId, channelId, itemId, userId }) {
@@ -524,6 +694,7 @@ export async function deleteItem({ guildId, channelId, itemId, userId }) {
         item.item_id AS item_id,
         item.name AS name,
         item.quantity AS quantity,
+        item.priority AS priority,
         inv.id AS inventory_id,
         inv.guild_id AS guild_id,
         inv.channel_id AS channel_id
@@ -543,7 +714,8 @@ export async function deleteItem({ guildId, channelId, itemId, userId }) {
         target.channel_id,
         target.item_id,
         target.name,
-        target.quantity
+        target.quantity,
+        target.priority
     ),
     touched AS (
       UPDATE inventories
@@ -561,7 +733,7 @@ export async function deleteItem({ guildId, channelId, itemId, userId }) {
       FROM deleted
       RETURNING id
     )
-    SELECT item_id, name, quantity, touched.version
+    SELECT item_id, name, quantity, priority, touched.version
     FROM deleted, touched
   `;
 
@@ -570,11 +742,71 @@ export async function deleteItem({ guildId, channelId, itemId, userId }) {
     throw new ItemNotFoundError(itemId);
   }
 
-  return {
-    item_id: Number(row.item_id),
-    name: row.name,
-    quantity: Number(row.quantity),
-  };
+  return normalizeItem(row);
+}
+
+export async function setItemPriority({ guildId, channelId, itemId, priority, userId }) {
+  await ensureSchema();
+  const sql = getSql();
+  const normalizedPriority = normalizePriority(priority);
+
+  const [row] = await sql`
+    WITH target AS (
+      SELECT
+        item.id AS row_id,
+        item.item_id AS item_id,
+        item.name AS name,
+        item.quantity AS quantity,
+        item.priority AS before_priority,
+        inv.id AS inventory_id,
+        inv.guild_id AS guild_id,
+        inv.channel_id AS channel_id
+      FROM inventory_items item
+      JOIN inventories inv ON inv.id = item.inventory_id
+      WHERE inv.guild_id = ${guildId}
+        AND inv.channel_id = ${channelId}
+        AND item.item_id = ${itemId}
+    ),
+    updated AS (
+      UPDATE inventory_items item
+      SET priority = ${normalizedPriority}, updated_by = ${userId}, updated_at = NOW()
+      FROM target
+      WHERE item.id = target.row_id
+      RETURNING
+        target.inventory_id,
+        target.guild_id,
+        target.channel_id,
+        target.item_id,
+        item.name,
+        item.quantity,
+        target.before_priority,
+        item.priority
+    ),
+    touched AS (
+      UPDATE inventories
+      SET version = version + 1, updated_at = NOW()
+      WHERE id = (SELECT inventory_id FROM updated)
+      RETURNING version
+    ),
+    history AS (
+      INSERT INTO inventory_history (
+        inventory_id, guild_id, channel_id, item_id, item_name, operation, before_name, after_name, user_id
+      )
+      SELECT inventory_id, guild_id, channel_id, item_id, name, 'prioridad',
+        before_priority, priority, ${userId}
+      FROM updated
+      RETURNING id
+    )
+    SELECT item_id, name, quantity, priority, touched.version
+    FROM updated, touched
+  `;
+
+  if (!row) {
+    await requireInventory({ guildId, channelId });
+    throw new ItemNotFoundError(itemId);
+  }
+
+  return normalizeItem(row);
 }
 
 export async function linkOrdersBoard({ guildId, boardChannelId, inventoryChannelId, userId }) {
@@ -943,6 +1175,7 @@ async function resolveOrderInventory({ guildId, channelId }) {
       inv.id,
       inv.guild_id,
       inv.channel_id,
+      inv.table_id,
       inv.name,
       inv.message_id,
       inv.orders_message_id,
@@ -982,7 +1215,7 @@ async function resolveOrderInventory({ guildId, channelId }) {
 async function requireInventoryById({ guildId, inventoryId }) {
   const sql = getSql();
   const [inventory] = await sql`
-    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
+    SELECT id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
     FROM inventories
     WHERE guild_id = ${guildId}
       AND id = ${inventoryId}
@@ -990,6 +1223,22 @@ async function requireInventoryById({ guildId, inventoryId }) {
 
   if (!inventory) {
     throw new InventoryNotFoundError();
+  }
+
+  return inventory;
+}
+
+async function requireInventoryByTableId({ guildId, tableId }) {
+  const sql = getSql();
+  const [inventory] = await sql`
+    SELECT id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
+    FROM inventories
+    WHERE guild_id = ${guildId}
+      AND table_id = ${tableId}
+  `;
+
+  if (!inventory) {
+    throw new InventoryError(`⚠️ No existe ninguna tabla de inventario con ID ${tableId}.`);
   }
 
   return inventory;
@@ -1014,7 +1263,7 @@ async function upsertOrderBoard({ guildId, boardChannelId, inventoryId, messageI
 async function requireInventory({ guildId, channelId }) {
   const sql = getSql();
   const [inventory] = await sql`
-    SELECT id, guild_id, channel_id, name, message_id, orders_message_id, version
+    SELECT id, guild_id, channel_id, table_id, name, message_id, orders_message_id, version
     FROM inventories
     WHERE guild_id = ${guildId}
       AND channel_id = ${channelId}
@@ -1038,6 +1287,23 @@ async function getItemQuantity({ guildId, channelId, itemId }) {
       AND item.item_id = ${itemId}
   `;
   return row ?? null;
+}
+
+function normalizeItem(row) {
+  return {
+    item_id: Number(row.item_id),
+    name: row.name,
+    quantity: Number(row.quantity),
+    priority: normalizePriority(row.priority ?? "none"),
+  };
+}
+
+function normalizePriority(priority) {
+  const normalized = String(priority ?? "none").trim().toLowerCase();
+  if (["none", "high", "medium", "low"].includes(normalized)) {
+    return normalized;
+  }
+  throw new InventoryError("⚠️ Prioridad no válida. Usa alta, media, baja o ninguna.");
 }
 
 function normalizeChange(row) {

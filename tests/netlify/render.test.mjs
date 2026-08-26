@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildActivityEmbed, buildOrdersEmbed, renderInventory } from "../../src/netlify/render.mjs";
+import {
+  buildActivityEmbed,
+  buildGeneralInventoryEmbeds,
+  buildOrdersEmbed,
+  renderInventory,
+} from "../../src/netlify/render.mjs";
 
 test("renderInventory shows empty state", () => {
   const rendered = renderInventory("Alquimia", []);
@@ -11,13 +16,38 @@ test("renderInventory shows empty state", () => {
 });
 
 test("renderInventory sorts items by id", () => {
-  const rendered = renderInventory("Leñadores", [
-    { item_id: 601, name: "Ramas", quantity: 15 },
-    { item_id: 102, name: "Leña", quantity: 120 },
+  const rendered = renderInventory({ table_id: 101, name: "Leñadores" }, [
+    { item_id: 601, name: "Ramas", quantity: 15, priority: "none" },
+    { item_id: 102, name: "Leña", quantity: 120, priority: "high" },
   ]);
 
-  assert.ok(rendered.description.indexOf("102 │ Leña") < rendered.description.indexOf("601 │ Ramas"));
+  assert.equal(rendered.title, "🧪 INVENTARIO 101 — LEÑADORES");
+  assert.ok(rendered.description.indexOf("102 │ 🔴") < rendered.description.indexOf("601 │ ⚪"));
   assert.match(rendered.description, /120/);
+});
+
+test("buildGeneralInventoryEmbeds renders nested inventory tables", () => {
+  const embeds = buildGeneralInventoryEmbeds({
+    inventories: [
+      {
+        table_id: 101,
+        channel_id: "111",
+        name: "Alquimia",
+        items: [{ item_id: 1, name: "Poción menor", quantity: 20, priority: "medium" }],
+      },
+      {
+        table_id: 102,
+        channel_id: "222",
+        name: "Cocina",
+        items: [{ item_id: 1, name: "Pan", quantity: 8, priority: "low" }],
+      },
+    ],
+  });
+
+  assert.equal(embeds.length, 2);
+  assert.equal(embeds[0].title, "📚 TABLA 101 — ALQUIMIA");
+  assert.match(embeds[0].description, /🟠/);
+  assert.match(embeds[1].footer.text, /<#222>/);
 });
 
 test("buildOrdersEmbed shows active orders and counters", () => {
