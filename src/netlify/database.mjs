@@ -237,6 +237,28 @@ export async function ensureSchema() {
       )
     `;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_general_boards_guild_id ON inventory_general_boards (guild_id)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_general_board_messages (
+        id BIGSERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        position INTEGER NOT NULL,
+        message_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_general_board_message_position UNIQUE (guild_id, channel_id, position),
+        CONSTRAINT ck_inventory_general_board_message_position CHECK (position >= 0)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_general_board_messages_guild_id ON inventory_general_board_messages (guild_id)`;
+    await sql`
+      INSERT INTO inventory_general_board_messages (guild_id, channel_id, position, message_id)
+      SELECT guild_id, channel_id, 0, message_id
+      FROM inventory_general_boards
+      WHERE message_id IS NOT NULL
+      ON CONFLICT (guild_id, channel_id, position) DO UPDATE
+      SET message_id = EXCLUDED.message_id, updated_at = NOW()
+    `;
   })();
 
   return schemaReady;
@@ -425,35 +447,77 @@ export async function getGeneralBoards({ guildId }) {
   const sql = getSql();
 
   const rows = await sql`
-    SELECT channel_id, message_id
+    SELECT DISTINCT channel_id
     FROM inventory_general_boards
     WHERE guild_id = ${guildId}
-      AND message_id IS NOT NULL
+    UNION
+    SELECT DISTINCT channel_id
+    FROM inventory_general_board_messages
+    WHERE guild_id = ${guildId}
     ORDER BY channel_id ASC
   `;
 
   return rows.map((row) => ({
     channelId: row.channel_id,
+  }));
+}
+
+export async function getGeneralBoardMessages({ guildId, channelId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const rows = await sql`
+    SELECT position, message_id
+    FROM inventory_general_board_messages
+    WHERE guild_id = ${guildId}
+      AND channel_id = ${channelId}
+    ORDER BY position ASC
+  `;
+
+  return rows.map((row) => ({
+    position: Number(row.position),
     messageId: row.message_id,
   }));
 }
 
-export async function setGeneralBoardMessageId({ guildId, channelId, messageId, userId }) {
+export async function setGeneralBoardMessageId({ guildId, channelId, messageId, userId, position = 0 }) {
   await ensureSchema();
   const sql = getSql();
 
-  const [board] = await sql`
+  await sql`
     INSERT INTO inventory_general_boards (guild_id, channel_id, message_id, created_by)
     VALUES (${guildId}, ${channelId}, ${messageId}, ${userId})
     ON CONFLICT (guild_id, channel_id) DO UPDATE
+    SET
+      message_id = CASE WHEN ${position} = 0 THEN EXCLUDED.message_id ELSE inventory_general_boards.message_id END,
+      updated_at = NOW()
+  `;
+
+  const [message] = await sql`
+    INSERT INTO inventory_general_board_messages (guild_id, channel_id, position, message_id)
+    VALUES (${guildId}, ${channelId}, ${position}, ${messageId})
+    ON CONFLICT (guild_id, channel_id, position) DO UPDATE
     SET message_id = EXCLUDED.message_id, updated_at = NOW()
-    RETURNING channel_id, message_id
+    RETURNING position, message_id
   `;
 
   return {
-    channelId: board.channel_id,
-    messageId: board.message_id,
+    channelId,
+    position: Number(message.position),
+    messageId: message.message_id,
   };
+}
+
+export async function deleteGeneralBoardMessage({ guildId, channelId, position }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  await sql`
+    DELETE FROM inventory_general_board_messages
+    WHERE guild_id = ${guildId}
+      AND channel_id = ${channelId}
+      AND position = ${position}
+  `;
 }
 
 export async function createItem({ guildId, channelId, itemId, name, quantity, userId }) {

@@ -3,7 +3,9 @@ import { ITEM_ID_WIDTH } from "./constants.mjs";
 const MATERIAL_WIDTH = 24;
 const QUANTITY_WIDTH = 8;
 const PRIORITY_WIDTH = 2;
-const GENERAL_INVENTORY_LIMIT = 9;
+const GENERAL_EMBED_DESCRIPTION_LIMIT = 3600;
+const GENERAL_PAGE_EMBED_LIMIT = 10;
+const GENERAL_PAGE_TEXT_LIMIT = 5200;
 
 const PRIORITY_META = {
   high: { icon: "🔴", label: "Alta" },
@@ -38,6 +40,22 @@ function priorityLegend() {
   return "Prioridad: 🔴 alta · 🟠 media · 🟢 baja · ⚪ ninguna";
 }
 
+function inventoryHeaderLines() {
+  return [
+    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"P".padEnd(PRIORITY_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
+    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(PRIORITY_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(QUANTITY_WIDTH)}`,
+  ];
+}
+
+function inventoryItemLine(item) {
+  const material = shorten(item.name, MATERIAL_WIDTH);
+  return `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${formatPriorityIcon(item.priority).padEnd(PRIORITY_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`;
+}
+
+function formatInventoryTableDescription(lines) {
+  return `\`\`\`text\n${lines.join("\n")}\n\`\`\``;
+}
+
 export function renderInventory(inventory, items) {
   const name = inventoryName(inventory);
   const tableId = inventoryTableId(inventory);
@@ -53,21 +71,14 @@ export function renderInventory(inventory, items) {
     };
   }
 
-  const lines = [
-    `${"ID".padStart(ITEM_ID_WIDTH)} │ ${"P".padEnd(PRIORITY_WIDTH)} │ ${"MATERIAL".padEnd(MATERIAL_WIDTH)} │ ${"CANTIDAD".padStart(QUANTITY_WIDTH)}`,
-    `${"─".repeat(ITEM_ID_WIDTH)}─┼─${"─".repeat(PRIORITY_WIDTH)}─┼─${"─".repeat(MATERIAL_WIDTH)}─┼─${"─".repeat(QUANTITY_WIDTH)}`,
-  ];
-
+  const lines = inventoryHeaderLines();
   for (const item of [...items].sort((a, b) => a.item_id - b.item_id)) {
-    const material = shorten(item.name, MATERIAL_WIDTH);
-    lines.push(
-      `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${formatPriorityIcon(item.priority).padEnd(PRIORITY_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`,
-    );
+    lines.push(inventoryItemLine(item));
   }
 
   return {
     title,
-    description: `\`\`\`text\n${lines.join("\n")}\n\`\`\``,
+    description: formatInventoryTableDescription(lines),
     color: 0x2f855a,
   };
 }
@@ -92,27 +103,97 @@ export function buildGeneralInventoryEmbeds({ inventories }) {
     ];
   }
 
-  const visibleInventories = inventories.slice(0, GENERAL_INVENTORY_LIMIT);
-  const embeds = visibleInventories.map((inventory) => {
-    const rendered = renderInventory(inventory, inventory.items);
-    return {
-      ...rendered,
-      title: `📚 TABLA ${inventory.table_id} — ${inventory.name.trim().toUpperCase()}`,
-      footer: {
-        text: `Canal <#${inventory.channel_id}> · ${priorityLegend()}`,
-      },
-    };
-  });
+  return inventories.flatMap((inventory) => buildGeneralInventoryEmbedsForInventory(inventory));
+}
 
-  if (inventories.length > visibleInventories.length) {
-    embeds.push({
-      title: "📚 Más tablas",
-      description: `Hay ${inventories.length - visibleInventories.length} inventarios más. Crea otra tabla general si necesitas separarlos por canal.`,
-      color: 0x5865f2,
-    });
+export function buildGeneralInventoryPages(view) {
+  const embeds = buildGeneralInventoryEmbeds(view);
+  const pages = [];
+  let currentPage = [];
+  let currentLength = 0;
+
+  for (const embed of embeds) {
+    const embedLength = embedTextLength(embed);
+    if (
+      currentPage.length > 0
+      && (currentPage.length >= GENERAL_PAGE_EMBED_LIMIT || currentLength + embedLength > GENERAL_PAGE_TEXT_LIMIT)
+    ) {
+      pages.push(currentPage);
+      currentPage = [];
+      currentLength = 0;
+    }
+
+    currentPage.push(embed);
+    currentLength += embedLength;
   }
 
-  return embeds;
+  if (currentPage.length) {
+    pages.push(currentPage);
+  }
+
+  return pages;
+}
+
+function buildGeneralInventoryEmbedsForInventory(inventory) {
+  const items = [...inventory.items].sort((a, b) => a.item_id - b.item_id);
+  if (!items.length) {
+    return [buildGeneralInventoryEmbed(inventory, "> No hay objetos registrados.")];
+  }
+
+  const chunks = [];
+  let currentItems = [];
+
+  for (const item of items) {
+    const nextItems = [...currentItems, item];
+    const nextDescription = formatInventoryTableDescription([
+      ...inventoryHeaderLines(),
+      ...nextItems.map(inventoryItemLine),
+    ]);
+
+    if (currentItems.length > 0 && nextDescription.length > GENERAL_EMBED_DESCRIPTION_LIMIT) {
+      chunks.push(currentItems);
+      currentItems = [item];
+    } else {
+      currentItems = nextItems;
+    }
+  }
+
+  if (currentItems.length) {
+    chunks.push(currentItems);
+  }
+
+  return chunks.map((chunk, index) => {
+    const suffix = chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : "";
+    return buildGeneralInventoryEmbed(
+      inventory,
+      formatInventoryTableDescription([...inventoryHeaderLines(), ...chunk.map(inventoryItemLine)]),
+      suffix,
+    );
+  });
+}
+
+function buildGeneralInventoryEmbed(inventory, description, titleSuffix = "") {
+  return {
+    title: `📚 TABLA ${inventory.table_id} — ${inventory.name.trim().toUpperCase()}${titleSuffix}`,
+    description,
+    color: 0x2f855a,
+    footer: {
+      text: `Canal <#${inventory.channel_id}> · ${priorityLegend()}`,
+    },
+  };
+}
+
+function embedTextLength(embed) {
+  const fieldsLength = (embed.fields ?? []).reduce(
+    (total, field) => total + String(field.name ?? "").length + String(field.value ?? "").length,
+    0,
+  );
+  return (
+    String(embed.title ?? "").length
+    + String(embed.description ?? "").length
+    + String(embed.footer?.text ?? "").length
+    + fieldsLength
+  );
 }
 
 export function buildOrdersEmbed({ inventory, orders, completedThisWeek, completedTotal }) {

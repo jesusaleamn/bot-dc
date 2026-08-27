@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildActivityEmbed,
   buildGeneralInventoryEmbeds,
+  buildGeneralInventoryPages,
   buildOrdersEmbed,
   renderInventory,
 } from "../../src/netlify/render.mjs";
@@ -48,6 +49,32 @@ test("buildGeneralInventoryEmbeds renders nested inventory tables", () => {
   assert.equal(embeds[0].title, "📚 TABLA 101 — ALQUIMIA");
   assert.match(embeds[0].description, /🟠/);
   assert.match(embeds[1].footer.text, /<#222>/);
+});
+
+test("buildGeneralInventoryPages keeps Discord embed payloads below one-message limits", () => {
+  const inventories = Array.from({ length: 5 }, (_, inventoryIndex) => ({
+    table_id: 101 + inventoryIndex,
+    channel_id: String(1000 + inventoryIndex),
+    name: `Gremio ${inventoryIndex + 1}`,
+    items: Array.from({ length: 30 }, (_, itemIndex) => ({
+      item_id: itemIndex + 1,
+      name: `Material muy largo ${inventoryIndex + 1}-${itemIndex + 1}`,
+      quantity: 1000 + itemIndex,
+      priority: itemIndex % 2 === 0 ? "high" : "none",
+    })),
+  }));
+
+  const pages = buildGeneralInventoryPages({ inventories });
+
+  assert.ok(pages.length > 1);
+  for (const page of pages) {
+    assert.ok(page.length <= 10);
+    const totalText = page.reduce(
+      (total, embed) => total + embed.title.length + embed.description.length + embed.footer.text.length,
+      0,
+    );
+    assert.ok(totalText <= 5200);
+  }
 });
 
 test("buildOrdersEmbed shows active orders and counters", () => {

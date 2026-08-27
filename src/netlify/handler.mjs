@@ -6,12 +6,12 @@ import { httpJson, interactionMessage, pongResponse } from "./responses.mjs";
 import {
   buildActivityEmbed,
   buildCompletedOrdersEmbed,
-  buildGeneralInventoryEmbeds,
+  buildGeneralInventoryPages,
   buildHelpEmbed,
   buildInventoryEmbed,
   buildOrdersEmbed,
 } from "./render.mjs";
-import { editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
+import { deleteInventoryMessage, editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
 import { scheduleEphemeralResponseDeletion } from "./ephemeral-cleanup.mjs";
 import {
   addQuantity,
@@ -19,10 +19,11 @@ import {
   createInventory,
   createItem,
   createOrder,
+  deleteGeneralBoardMessage,
   deleteItem,
   deliverOrder,
   editItemName,
-  getGeneralBoard,
+  getGeneralBoardMessages,
   getGeneralBoards,
   getGeneralInventoryView,
   getOrderBoardsForInventory,
@@ -457,30 +458,47 @@ async function refreshThenReply(context, successMessage) {
 }
 
 async function publishGeneralBoard(context) {
-  const view = await getGeneralInventoryView(context);
-  const embeds = buildGeneralInventoryEmbeds(view);
-  const board = await getGeneralBoard(context);
+  await publishGeneralBoardInChannel(context, context.channelId);
+}
 
-  if (board?.messageId) {
-    try {
-      await editInventoryMessage(context.channelId, board.messageId, embeds);
-      await setGeneralBoardMessageId({
-        ...context,
-        messageId: board.messageId,
-      });
-      return;
-    } catch (error) {
-      if (!(error instanceof InventoryMessageMissingError)) {
-        throw error;
+async function publishGeneralBoardInChannel(context, channelId) {
+  const view = await getGeneralInventoryView(context);
+  const pages = buildGeneralInventoryPages(view);
+  const messages = await getGeneralBoardMessages({
+    guildId: context.guildId,
+    channelId,
+  });
+  const messagesByPosition = new Map(messages.map((message) => [message.position, message.messageId]));
+
+  for (const [position, embeds] of pages.entries()) {
+    const existingMessageId = messagesByPosition.get(position);
+    if (existingMessageId) {
+      try {
+        await editInventoryMessage(channelId, existingMessageId, embeds);
+        await setGeneralBoardMessageId({
+          ...context,
+          channelId,
+          messageId: existingMessageId,
+          position,
+        });
+        continue;
+      } catch (error) {
+        if (!(error instanceof InventoryMessageMissingError)) {
+          throw error;
+        }
       }
     }
+
+    const message = await sendInventoryMessage(channelId, embeds);
+    await setGeneralBoardMessageId({
+      ...context,
+      channelId,
+      messageId: message.id,
+      position,
+    });
   }
 
-  const message = await sendInventoryMessage(context.channelId, embeds);
-  await setGeneralBoardMessageId({
-    ...context,
-    messageId: message.id,
-  });
+  await removeExtraGeneralBoardMessages(context, channelId, messages, pages.length);
 }
 
 async function refreshGeneralBoardsBestEffort(context) {
@@ -489,14 +507,43 @@ async function refreshGeneralBoardsBestEffort(context) {
     return;
   }
 
-  const view = await getGeneralInventoryView(context);
-  const embeds = buildGeneralInventoryEmbeds(view);
-
   for (const board of boards) {
     try {
-      await editInventoryMessage(board.channelId, board.messageId, embeds);
+      await publishGeneralBoardInChannel(context, board.channelId);
     } catch (error) {
-      if (error instanceof InventoryMessageMissingError || error instanceof BotPermissionError) {
+      if (error instanceof InventoryError) {
+        console.warn("General board refresh skipped", board.channelId, error.userMessage);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function removeExtraGeneralBoardMessages(context, channelId, messages, pageCount) {
+  for (const message of messages) {
+    if (message.position < pageCount) {
+      continue;
+    }
+
+    try {
+      await deleteInventoryMessage(channelId, message.messageId);
+      await deleteGeneralBoardMessage({
+        guildId: context.guildId,
+        channelId,
+        position: message.position,
+      });
+    } catch (error) {
+      if (error instanceof InventoryMessageMissingError) {
+        await deleteGeneralBoardMessage({
+          guildId: context.guildId,
+          channelId,
+          position: message.position,
+        });
+        continue;
+      }
+      if (error instanceof InventoryError) {
+        console.warn("General board cleanup skipped", channelId, error.userMessage);
         continue;
       }
       throw error;

@@ -59,6 +59,12 @@ export async function editInventoryMessage(channelId, messageId, embedOrEmbeds) 
   });
 }
 
+export async function deleteInventoryMessage(channelId, messageId) {
+  return discordRequest(`/channels/${channelId}/messages/${messageId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function registerApplicationCommands(applicationId, commands, guildId = null) {
   const path = guildId
     ? `/applications/${applicationId}/guilds/${guildId}/commands`
