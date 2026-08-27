@@ -103,6 +103,29 @@ export async function ensureSchema() {
       WHERE table_id IS NOT NULL
     `;
     await sql`
+      CREATE TABLE IF NOT EXISTS inventory_message_pages (
+        id BIGSERIAL PRIMARY KEY,
+        inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        position INTEGER NOT NULL,
+        message_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_message_page_position UNIQUE (inventory_id, position),
+        CONSTRAINT ck_inventory_message_page_position CHECK (position >= 0)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_message_pages_guild_channel ON inventory_message_pages (guild_id, channel_id)`;
+    await sql`
+      INSERT INTO inventory_message_pages (inventory_id, guild_id, channel_id, position, message_id)
+      SELECT id, guild_id, channel_id, 0, message_id
+      FROM inventories
+      WHERE message_id IS NOT NULL
+      ON CONFLICT (inventory_id, position) DO UPDATE
+      SET message_id = EXCLUDED.message_id, updated_at = NOW()
+    `;
+    await sql`
       CREATE TABLE IF NOT EXISTS inventory_items (
         id BIGSERIAL PRIMARY KEY,
         inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
@@ -329,7 +352,97 @@ export async function setInventoryMessageId({ guildId, channelId, messageId, use
     throw new InventoryNotFoundError();
   }
 
+  await sql`
+    INSERT INTO inventory_message_pages (inventory_id, guild_id, channel_id, position, message_id)
+    VALUES (${row.id}, ${guildId}, ${channelId}, 0, ${messageId})
+    ON CONFLICT (inventory_id, position) DO UPDATE
+    SET message_id = EXCLUDED.message_id, updated_at = NOW()
+  `;
+
   return row;
+}
+
+export async function getInventoryMessagePages({ guildId, channelId }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId });
+
+  const rows = await sql`
+    SELECT position, message_id
+    FROM inventory_message_pages
+    WHERE inventory_id = ${inventory.id}
+    ORDER BY position ASC
+  `;
+
+  if (!rows.length && inventory.message_id) {
+    return [{ position: 0, messageId: inventory.message_id }];
+  }
+
+  return rows.map((row) => ({
+    position: Number(row.position),
+    messageId: row.message_id,
+  }));
+}
+
+export async function setInventoryMessagePageId({
+  guildId,
+  channelId,
+  messageId,
+  userId = null,
+  position = 0,
+  recordRecreate = false,
+}) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId });
+
+  await sql`
+    INSERT INTO inventory_message_pages (inventory_id, guild_id, channel_id, position, message_id)
+    VALUES (${inventory.id}, ${guildId}, ${channelId}, ${position}, ${messageId})
+    ON CONFLICT (inventory_id, position) DO UPDATE
+    SET message_id = EXCLUDED.message_id, updated_at = NOW()
+  `;
+
+  if (position === 0) {
+    await sql`
+      WITH updated AS (
+        UPDATE inventories
+        SET
+          message_id = ${messageId},
+          version = version + ${recordRecreate ? 1 : 0},
+          updated_at = NOW()
+        WHERE id = ${inventory.id}
+        RETURNING id, guild_id, channel_id
+      ),
+      history AS (
+        INSERT INTO inventory_history (inventory_id, guild_id, channel_id, operation, user_id)
+        SELECT id, guild_id, channel_id, 'recrear_inventario', ${userId ?? "0"}
+        FROM updated
+        WHERE ${recordRecreate}
+        RETURNING id
+      )
+      SELECT id
+      FROM updated
+    `;
+  }
+
+  return {
+    channelId,
+    position,
+    messageId,
+  };
+}
+
+export async function deleteInventoryMessagePage({ guildId, channelId, position }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await requireInventory({ guildId, channelId });
+
+  await sql`
+    DELETE FROM inventory_message_pages
+    WHERE inventory_id = ${inventory.id}
+      AND position = ${position}
+  `;
 }
 
 export async function getInventoryView({ guildId, channelId }) {

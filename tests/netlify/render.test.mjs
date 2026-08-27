@@ -5,6 +5,7 @@ import {
   buildActivityEmbed,
   buildGeneralInventoryEmbeds,
   buildGeneralInventoryPages,
+  buildInventoryPages,
   buildOrdersEmbed,
   renderInventory,
 } from "../../src/netlify/render.mjs";
@@ -23,7 +24,7 @@ test("renderInventory sorts items by id", () => {
   ]);
 
   assert.equal(rendered.title, "🧪 INVENTARIO 101 — LEÑADORES");
-  assert.ok(rendered.description.indexOf("102 │ 🔴") < rendered.description.indexOf("601 │ ⚪"));
+  assert.ok(rendered.description.indexOf("102 │ A") < rendered.description.indexOf("601 │ -"));
   assert.match(rendered.description, /120/);
 });
 
@@ -47,8 +48,26 @@ test("buildGeneralInventoryEmbeds renders nested inventory tables", () => {
 
   assert.equal(embeds.length, 2);
   assert.equal(embeds[0].title, "📚 TABLA 101 — ALQUIMIA");
-  assert.match(embeds[0].description, /🟠/);
+  assert.match(embeds[0].description, /  1 │ M/);
   assert.match(embeds[1].footer.text, /<#222>/);
+});
+
+test("buildInventoryPages splits large personal inventories", () => {
+  const pages = buildInventoryPages(
+    { table_id: 105, name: "Peletería" },
+    Array.from({ length: 120 }, (_, index) => ({
+      item_id: index + 1,
+      name: `Material extenso ${index + 1}`,
+      quantity: 100 + index,
+      priority: index % 3 === 0 ? "high" : "none",
+    })),
+  );
+
+  assert.ok(pages.length > 1);
+  assert.match(pages[0].title, /\(1\/2\)|\(1\/3\)|\(1\/4\)/);
+  for (const page of pages) {
+    assert.ok(page.description.length <= 3600);
+  }
 });
 
 test("buildGeneralInventoryPages keeps Discord embed payloads below one-message limits", () => {

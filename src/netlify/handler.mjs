@@ -8,7 +8,7 @@ import {
   buildCompletedOrdersEmbed,
   buildGeneralInventoryPages,
   buildHelpEmbed,
-  buildInventoryEmbed,
+  buildInventoryPages,
   buildOrdersEmbed,
 } from "./render.mjs";
 import { deleteInventoryMessage, editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
@@ -20,6 +20,7 @@ import {
   createItem,
   createOrder,
   deleteGeneralBoardMessage,
+  deleteInventoryMessagePage,
   deleteItem,
   deliverOrder,
   editItemName,
@@ -28,6 +29,7 @@ import {
   getGeneralInventoryView,
   getOrderBoardsForInventory,
   getInventoryByTableId,
+  getInventoryMessagePages,
   getOrdersView,
   getInventoryVersion,
   getInventoryView,
@@ -37,7 +39,7 @@ import {
   listHistory,
   setGeneralBoardMessageId,
   setOrdersMessageId,
-  setInventoryMessageId,
+  setInventoryMessagePageId,
   setItemPriority,
   subtractQuantity,
 } from "./database.mjs";
@@ -167,16 +169,7 @@ async function handleCreateInventory(context, options) {
   });
 
   try {
-    const view = await getInventoryView(context);
-    const message = await sendInventoryMessage(
-      context.channelId,
-      buildInventoryEmbed(view.inventory, view.items),
-    );
-
-    await setInventoryMessageId({
-      ...context,
-      messageId: message.id,
-    });
+    await publishInventoryMessages(context);
     await refreshGeneralBoardsBestEffort(context);
   } catch (error) {
     if (error instanceof BotPermissionError) {
@@ -242,39 +235,15 @@ async function handleDelete(context, options) {
 
 async function handleView(context) {
   const view = await getInventoryView(context);
+  const pages = buildInventoryPages(view.inventory, view.items);
   return interactionMessage({
-    embeds: [buildInventoryEmbed(view.inventory, view.items)],
+    content: pages.length > 1 ? `Mostrando pagina 1 de ${pages.length}. El mensaje fijo del canal tiene todas las paginas.` : undefined,
+    embeds: [pages[0]],
   });
 }
 
 async function handleRecreate(context) {
-  const view = await getInventoryView(context);
-
-  if (view.inventory.message_id) {
-    try {
-      await editInventoryMessage(
-        context.channelId,
-        view.inventory.message_id,
-        buildInventoryEmbed(view.inventory, view.items),
-      );
-      await refreshGeneralBoardsBestEffort(context);
-      return temporarySuccessMessage(context);
-    } catch (error) {
-      if (!(error instanceof InventoryMessageMissingError)) {
-        throw error;
-      }
-    }
-  }
-
-  const message = await sendInventoryMessage(
-    context.channelId,
-    buildInventoryEmbed(view.inventory, view.items),
-  );
-  await setInventoryMessageId({
-    ...context,
-    messageId: message.id,
-    recordRecreate: true,
-  });
+  await publishInventoryMessages(context, { recordRecreate: true });
   await refreshGeneralBoardsBestEffort(context);
 
   return temporarySuccessMessage(context);
@@ -652,20 +621,82 @@ async function contextForInventoryTable(context, tableId) {
   };
 }
 
+async function publishInventoryMessages(context, options = {}) {
+  const view = await getInventoryView(context);
+  await syncInventoryMessages(context, view, options);
+}
+
+async function syncInventoryMessages(context, view, { recordRecreate = false } = {}) {
+  const pages = buildInventoryPages(view.inventory, view.items);
+  const messages = await getInventoryMessagePages(context);
+  const messagesByPosition = new Map(messages.map((message) => [message.position, message.messageId]));
+
+  for (const [position, embed] of pages.entries()) {
+    const existingMessageId = messagesByPosition.get(position);
+    if (existingMessageId) {
+      try {
+        await editInventoryMessage(context.channelId, existingMessageId, embed);
+        await setInventoryMessagePageId({
+          ...context,
+          messageId: existingMessageId,
+          position,
+          recordRecreate: recordRecreate && position === 0,
+        });
+        continue;
+      } catch (error) {
+        if (!(error instanceof InventoryMessageMissingError)) {
+          throw error;
+        }
+      }
+    }
+
+    const message = await sendInventoryMessage(context.channelId, embed);
+    await setInventoryMessagePageId({
+      ...context,
+      messageId: message.id,
+      position,
+      recordRecreate: recordRecreate && position === 0,
+    });
+  }
+
+  await removeExtraInventoryMessages(context, messages, pages.length);
+}
+
+async function removeExtraInventoryMessages(context, messages, pageCount) {
+  for (const message of messages) {
+    if (message.position < pageCount) {
+      continue;
+    }
+
+    try {
+      await deleteInventoryMessage(context.channelId, message.messageId);
+      await deleteInventoryMessagePage({
+        ...context,
+        position: message.position,
+      });
+    } catch (error) {
+      if (error instanceof InventoryMessageMissingError) {
+        await deleteInventoryMessagePage({
+          ...context,
+          position: message.position,
+        });
+        continue;
+      }
+      if (error instanceof InventoryError) {
+        console.warn("Inventory page cleanup skipped", context.channelId, error.userMessage);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 async function refreshPermanentMessage(context) {
   let lastView = null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const view = await getInventoryView(context);
-    if (!view.inventory.message_id) {
-      throw new InventoryMessageMissingError();
-    }
-
-    await editInventoryMessage(
-      context.channelId,
-      view.inventory.message_id,
-      buildInventoryEmbed(view.inventory, view.items),
-    );
+    await syncInventoryMessages(context, view);
 
     lastView = view;
     const currentVersion = await getInventoryVersion(context);
@@ -676,11 +707,7 @@ async function refreshPermanentMessage(context) {
 
   if (lastView?.inventory?.message_id) {
     const latest = await getInventoryView(context);
-    await editInventoryMessage(
-      context.channelId,
-      latest.inventory.message_id,
-      buildInventoryEmbed(latest.inventory, latest.items),
-    );
+    await syncInventoryMessages(context, latest);
   }
 }
 

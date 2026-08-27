@@ -2,16 +2,17 @@ import { ITEM_ID_WIDTH } from "./constants.mjs";
 
 const MATERIAL_WIDTH = 24;
 const QUANTITY_WIDTH = 8;
-const PRIORITY_WIDTH = 2;
+const PRIORITY_WIDTH = 1;
+const INVENTORY_EMBED_DESCRIPTION_LIMIT = 3600;
 const GENERAL_EMBED_DESCRIPTION_LIMIT = 3600;
 const GENERAL_PAGE_EMBED_LIMIT = 10;
 const GENERAL_PAGE_TEXT_LIMIT = 5200;
 
 const PRIORITY_META = {
-  high: { icon: "🔴", label: "Alta" },
-  medium: { icon: "🟠", label: "Media" },
-  low: { icon: "🟢", label: "Baja" },
-  none: { icon: "⚪", label: "Ninguna" },
+  high: { mark: "A", icon: "🔴", label: "Alta" },
+  medium: { mark: "M", icon: "🟠", label: "Media" },
+  low: { mark: "B", icon: "🟢", label: "Baja" },
+  none: { mark: "-", icon: "⚪", label: "Ninguna" },
 };
 
 function shorten(value, width) {
@@ -32,12 +33,12 @@ function inventoryTableId(inventory) {
   return typeof inventory === "string" ? null : inventory.table_id;
 }
 
-function formatPriorityIcon(priority) {
-  return PRIORITY_META[priority]?.icon ?? PRIORITY_META.none.icon;
+function formatPriorityMark(priority) {
+  return PRIORITY_META[priority]?.mark ?? PRIORITY_META.none.mark;
 }
 
 function priorityLegend() {
-  return "Prioridad: 🔴 alta · 🟠 media · 🟢 baja · ⚪ ninguna";
+  return "Prioridad: A 🔴 alta · M 🟠 media · B 🟢 baja · - ⚪ ninguna";
 }
 
 function inventoryHeaderLines() {
@@ -49,7 +50,7 @@ function inventoryHeaderLines() {
 
 function inventoryItemLine(item) {
   const material = shorten(item.name, MATERIAL_WIDTH);
-  return `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${formatPriorityIcon(item.priority).padEnd(PRIORITY_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`;
+  return `${String(item.item_id).padStart(ITEM_ID_WIDTH)} │ ${formatPriorityMark(item.priority).padEnd(PRIORITY_WIDTH)} │ ${material.padEnd(MATERIAL_WIDTH)} │ ${String(item.quantity).padStart(QUANTITY_WIDTH)}`;
 }
 
 function formatInventoryTableDescription(lines) {
@@ -57,39 +58,38 @@ function formatInventoryTableDescription(lines) {
 }
 
 export function renderInventory(inventory, items) {
-  const name = inventoryName(inventory);
-  const tableId = inventoryTableId(inventory);
-  const title = tableId
-    ? `🧪 INVENTARIO ${tableId} — ${name.trim().toUpperCase()}`
-    : `🧪 INVENTARIO — ${name.trim().toUpperCase()}`;
-
-  if (!items.length) {
-    return {
-      title,
-      description: "> No hay objetos registrados.",
-      color: 0x2f855a,
-    };
-  }
-
-  const lines = inventoryHeaderLines();
-  for (const item of [...items].sort((a, b) => a.item_id - b.item_id)) {
-    lines.push(inventoryItemLine(item));
-  }
-
-  return {
-    title,
-    description: formatInventoryTableDescription(lines),
-    color: 0x2f855a,
-  };
+  return buildInventoryPages(inventory, items)[0];
 }
 
-export function buildInventoryEmbed(inventory, items) {
-  return {
-    ...renderInventory(inventory, items),
+export function buildInventoryPages(inventory, items) {
+  const name = inventoryName(inventory);
+  const tableId = inventoryTableId(inventory);
+
+  if (!items.length) {
+    return [{
+      title: inventoryTitle(name, tableId),
+      description: "> No hay objetos registrados.",
+      color: 0x2f855a,
+      footer: {
+        text: `Inventario compartido de este canal · ${priorityLegend()}`,
+      },
+    }];
+  }
+
+  const chunks = splitInventoryItems(items, INVENTORY_EMBED_DESCRIPTION_LIMIT);
+
+  return chunks.map((chunk, index) => ({
+    title: inventoryTitle(name, tableId, chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : ""),
+    description: formatInventoryTableDescription([...inventoryHeaderLines(), ...chunk.map(inventoryItemLine)]),
+    color: 0x2f855a,
     footer: {
       text: `Inventario compartido de este canal · ${priorityLegend()}`,
     },
-  };
+  }));
+}
+
+export function buildInventoryEmbed(inventory, items) {
+  return buildInventoryPages(inventory, items)[0];
 }
 
 export function buildGeneralInventoryEmbeds({ inventories }) {
@@ -141,26 +141,7 @@ function buildGeneralInventoryEmbedsForInventory(inventory) {
   }
 
   const chunks = [];
-  let currentItems = [];
-
-  for (const item of items) {
-    const nextItems = [...currentItems, item];
-    const nextDescription = formatInventoryTableDescription([
-      ...inventoryHeaderLines(),
-      ...nextItems.map(inventoryItemLine),
-    ]);
-
-    if (currentItems.length > 0 && nextDescription.length > GENERAL_EMBED_DESCRIPTION_LIMIT) {
-      chunks.push(currentItems);
-      currentItems = [item];
-    } else {
-      currentItems = nextItems;
-    }
-  }
-
-  if (currentItems.length) {
-    chunks.push(currentItems);
-  }
+  chunks.push(...splitInventoryItems(items, GENERAL_EMBED_DESCRIPTION_LIMIT));
 
   return chunks.map((chunk, index) => {
     const suffix = chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : "";
@@ -194,6 +175,39 @@ function embedTextLength(embed) {
     + String(embed.footer?.text ?? "").length
     + fieldsLength
   );
+}
+
+function splitInventoryItems(items, descriptionLimit) {
+  const sortedItems = [...items].sort((a, b) => a.item_id - b.item_id);
+  const chunks = [];
+  let currentItems = [];
+
+  for (const item of sortedItems) {
+    const nextItems = [...currentItems, item];
+    const nextDescription = formatInventoryTableDescription([
+      ...inventoryHeaderLines(),
+      ...nextItems.map(inventoryItemLine),
+    ]);
+
+    if (currentItems.length > 0 && nextDescription.length > descriptionLimit) {
+      chunks.push(currentItems);
+      currentItems = [item];
+    } else {
+      currentItems = nextItems;
+    }
+  }
+
+  if (currentItems.length) {
+    chunks.push(currentItems);
+  }
+
+  return chunks;
+}
+
+function inventoryTitle(name, tableId, suffix = "") {
+  return tableId
+    ? `🧪 INVENTARIO ${tableId} — ${name.trim().toUpperCase()}${suffix}`
+    : `🧪 INVENTARIO — ${name.trim().toUpperCase()}${suffix}`;
 }
 
 export function buildOrdersEmbed({ inventory, orders, completedThisWeek, completedTotal }) {
