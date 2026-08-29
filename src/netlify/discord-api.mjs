@@ -85,35 +85,21 @@ function normalizeEmbeds(embedOrEmbeds) {
   return Array.isArray(embedOrEmbeds) ? embedOrEmbeds : [embedOrEmbeds];
 }
 
-function normalizeMessagePayload(message) {
-  if (
-    message
-    && !Array.isArray(message)
-    && (
-      Object.hasOwn(message, "content")
-      || Object.hasOwn(message, "embeds")
-      || Object.hasOwn(message, "allowed_mentions")
-    )
-  ) {
-    return message;
-  }
-
-  return {
-    embeds: normalizeEmbeds(message),
-  };
-}
-
-export async function sendInventoryMessage(channelId, message) {
+export async function sendInventoryMessage(channelId, embedOrEmbeds) {
   return discordRequest(`/channels/${channelId}/messages`, {
     method: "POST",
-    body: JSON.stringify(normalizeMessagePayload(message)),
+    body: JSON.stringify({
+      embeds: normalizeEmbeds(embedOrEmbeds),
+    }),
   });
 }
 
-export async function editInventoryMessage(channelId, messageId, message) {
+export async function editInventoryMessage(channelId, messageId, embedOrEmbeds) {
   return discordRequest(`/channels/${channelId}/messages/${messageId}`, {
     method: "PATCH",
-    body: JSON.stringify(normalizeMessagePayload(message)),
+    body: JSON.stringify({
+      embeds: normalizeEmbeds(embedOrEmbeds),
+    }),
   });
 }
 

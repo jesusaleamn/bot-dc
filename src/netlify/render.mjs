@@ -7,7 +7,6 @@ const INVENTORY_EMBED_DESCRIPTION_LIMIT = 3600;
 const GENERAL_EMBED_DESCRIPTION_LIMIT = 3600;
 const GENERAL_PAGE_EMBED_LIMIT = 10;
 const GENERAL_PAGE_TEXT_LIMIT = 5200;
-const MESSAGE_CONTENT_LIMIT = 1800;
 
 const PRIORITY_META = {
   high: { mark: "A", icon: "🔴", label: "Alta" },
@@ -89,24 +88,6 @@ export function buildInventoryPages(inventory, items) {
   }));
 }
 
-export function buildInventoryMessagePages(inventory, items) {
-  const name = inventoryName(inventory);
-  const tableId = inventoryTableId(inventory);
-  const footerText = `Inventario compartido de este canal · ${priorityLegend()}`;
-
-  if (!items.length) {
-    return [
-      messagePayload(inventoryTextContent(inventoryTitle(name, tableId), [], footerText)),
-    ];
-  }
-
-  const chunks = splitInventoryItemsForMessage(items, inventoryTitle(name, tableId), footerText);
-  return chunks.map((chunk, index) => {
-    const suffix = chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : "";
-    return messagePayload(inventoryTextContent(inventoryTitle(name, tableId, suffix), chunk, footerText));
-  });
-}
-
 export function buildInventoryEmbed(inventory, items) {
   return buildInventoryPages(inventory, items)[0];
 }
@@ -153,28 +134,6 @@ export function buildGeneralInventoryPages(view) {
   return pages;
 }
 
-export function buildGeneralInventoryMessagePages(view) {
-  const sections = buildGeneralInventoryTextSections(view);
-  const pages = [];
-  let currentPage = "";
-
-  for (const section of sections) {
-    const nextPage = currentPage ? `${currentPage}\n\n${section}` : section;
-    if (currentPage && nextPage.length > MESSAGE_CONTENT_LIMIT) {
-      pages.push(messagePayload(currentPage));
-      currentPage = section;
-    } else {
-      currentPage = nextPage;
-    }
-  }
-
-  if (currentPage) {
-    pages.push(messagePayload(currentPage));
-  }
-
-  return pages;
-}
-
 function buildGeneralInventoryEmbedsForInventory(inventory) {
   const items = [...inventory.items].sort((a, b) => a.item_id - b.item_id);
   if (!items.length) {
@@ -205,47 +164,6 @@ function buildGeneralInventoryEmbed(inventory, description, titleSuffix = "") {
   };
 }
 
-function buildGeneralInventoryTextSections({ inventories }) {
-  if (!inventories.length) {
-    return [
-      "**📚 TABLA GENERAL**\n> No hay inventarios creados en este servidor.",
-    ];
-  }
-
-  return inventories.flatMap((inventory) => buildGeneralInventoryTextSectionsForInventory(inventory));
-}
-
-function buildGeneralInventoryTextSectionsForInventory(inventory) {
-  const items = [...inventory.items].sort((a, b) => a.item_id - b.item_id);
-  const baseTitle = `📚 TABLA ${inventory.table_id} — ${inventory.name.trim().toUpperCase()}`;
-  const footerText = `Canal <#${inventory.channel_id}> · ${priorityLegend()}`;
-
-  if (!items.length) {
-    return [inventoryTextContent(baseTitle, [], footerText)];
-  }
-
-  const chunks = splitInventoryItemsForMessage(items, baseTitle, footerText);
-  return chunks.map((chunk, index) => {
-    const suffix = chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : "";
-    return inventoryTextContent(`${baseTitle}${suffix}`, chunk, footerText);
-  });
-}
-
-function inventoryTextContent(title, items, footerText) {
-  const description = items.length
-    ? formatInventoryTableDescription([...inventoryHeaderLines(), ...items.map(inventoryItemLine)])
-    : "> No hay objetos registrados.";
-
-  return `**${title}**\n${description}\n${footerText}`;
-}
-
-function messagePayload(content) {
-  return {
-    content,
-    embeds: [],
-  };
-}
-
 function embedTextLength(embed) {
   const fieldsLength = (embed.fields ?? []).reduce(
     (total, field) => total + String(field.name ?? "").length + String(field.value ?? "").length,
@@ -272,30 +190,6 @@ function splitInventoryItems(items, descriptionLimit) {
     ]);
 
     if (currentItems.length > 0 && nextDescription.length > descriptionLimit) {
-      chunks.push(currentItems);
-      currentItems = [item];
-    } else {
-      currentItems = nextItems;
-    }
-  }
-
-  if (currentItems.length) {
-    chunks.push(currentItems);
-  }
-
-  return chunks;
-}
-
-function splitInventoryItemsForMessage(items, baseTitle, footerText) {
-  const sortedItems = [...items].sort((a, b) => a.item_id - b.item_id);
-  const chunks = [];
-  let currentItems = [];
-
-  for (const item of sortedItems) {
-    const nextItems = [...currentItems, item];
-    const nextContent = inventoryTextContent(`${baseTitle} (999/999)`, nextItems, footerText);
-
-    if (currentItems.length > 0 && nextContent.length > MESSAGE_CONTENT_LIMIT) {
       chunks.push(currentItems);
       currentItems = [item];
     } else {

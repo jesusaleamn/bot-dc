@@ -6,9 +6,9 @@ import { httpJson, interactionMessage, pongResponse } from "./responses.mjs";
 import {
   buildActivityEmbed,
   buildCompletedOrdersEmbed,
-  buildGeneralInventoryMessagePages,
+  buildGeneralInventoryPages,
   buildHelpEmbed,
-  buildInventoryMessagePages,
+  buildInventoryPages,
   buildOrdersEmbed,
 } from "./render.mjs";
 import { deleteInventoryMessage, editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
@@ -235,13 +235,10 @@ async function handleDelete(context, options) {
 
 async function handleView(context) {
   const view = await getInventoryView(context);
-  const pages = buildInventoryMessagePages(view.inventory, view.items);
-  const content = pages.length > 1
-    ? `${pages[0].content}\n\nMostrando pagina 1 de ${pages.length}. El mensaje fijo del canal tiene todas las paginas.`
-    : pages[0].content;
-
+  const pages = buildInventoryPages(view.inventory, view.items);
   return interactionMessage({
-    content,
+    content: pages.length > 1 ? `Mostrando pagina 1 de ${pages.length}. El mensaje fijo del canal tiene todas las paginas.` : undefined,
+    embeds: [pages[0]],
   });
 }
 
@@ -435,18 +432,18 @@ async function publishGeneralBoard(context) {
 
 async function publishGeneralBoardInChannel(context, channelId) {
   const view = await getGeneralInventoryView(context);
-  const pages = buildGeneralInventoryMessagePages(view);
+  const pages = buildGeneralInventoryPages(view);
   const messages = await getGeneralBoardMessages({
     guildId: context.guildId,
     channelId,
   });
   const messagesByPosition = new Map(messages.map((message) => [message.position, message.messageId]));
 
-  for (const [position, page] of pages.entries()) {
+  for (const [position, embeds] of pages.entries()) {
     const existingMessageId = messagesByPosition.get(position);
     if (existingMessageId) {
       try {
-        await editInventoryMessage(channelId, existingMessageId, page);
+        await editInventoryMessage(channelId, existingMessageId, embeds);
         await setGeneralBoardMessageId({
           ...context,
           channelId,
@@ -461,7 +458,7 @@ async function publishGeneralBoardInChannel(context, channelId) {
       }
     }
 
-    const message = await sendInventoryMessage(channelId, page);
+    const message = await sendInventoryMessage(channelId, embeds);
     await setGeneralBoardMessageId({
       ...context,
       channelId,
@@ -630,15 +627,15 @@ async function publishInventoryMessages(context, options = {}) {
 }
 
 async function syncInventoryMessages(context, view, { recordRecreate = false } = {}) {
-  const pages = buildInventoryMessagePages(view.inventory, view.items);
+  const pages = buildInventoryPages(view.inventory, view.items);
   const messages = await getInventoryMessagePages(context);
   const messagesByPosition = new Map(messages.map((message) => [message.position, message.messageId]));
 
-  for (const [position, page] of pages.entries()) {
+  for (const [position, embed] of pages.entries()) {
     const existingMessageId = messagesByPosition.get(position);
     if (existingMessageId) {
       try {
-        await editInventoryMessage(context.channelId, existingMessageId, page);
+        await editInventoryMessage(context.channelId, existingMessageId, embed);
         await setInventoryMessagePageId({
           ...context,
           messageId: existingMessageId,
@@ -653,7 +650,7 @@ async function syncInventoryMessages(context, view, { recordRecreate = false } =
       }
     }
 
-    const message = await sendInventoryMessage(context.channelId, page);
+    const message = await sendInventoryMessage(context.channelId, embed);
     await setInventoryMessagePageId({
       ...context,
       messageId: message.id,

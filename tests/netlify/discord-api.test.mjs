@@ -38,28 +38,6 @@ test("Discord 403 is reported as missing bot permissions", async () => {
   );
 });
 
-test("editInventoryMessage accepts visible message content and clears embeds", async () => {
-  process.env.DISCORD_TOKEN = "bot-token";
-  let requestBody = null;
-
-  globalThis.fetch = async (_url, options) => {
-    requestBody = JSON.parse(options.body);
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({ id: "message-id" }),
-    };
-  };
-
-  await editInventoryMessage("channel-id", "message-id", {
-    content: "**INVENTARIO**\n```text\nID │ MATERIAL\n```",
-    embeds: [],
-  });
-
-  assert.equal(requestBody.content, "**INVENTARIO**\n```text\nID │ MATERIAL\n```");
-  assert.deepEqual(requestBody.embeds, []);
-});
-
 test("editInventoryMessage retries Discord 429 responses", async () => {
   process.env.DISCORD_TOKEN = "bot-token";
   let calls = 0;

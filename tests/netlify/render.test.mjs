@@ -4,9 +4,7 @@ import test from "node:test";
 import {
   buildActivityEmbed,
   buildGeneralInventoryEmbeds,
-  buildGeneralInventoryMessagePages,
   buildGeneralInventoryPages,
-  buildInventoryMessagePages,
   buildInventoryPages,
   buildOrdersEmbed,
   renderInventory,
@@ -72,36 +70,6 @@ test("buildInventoryPages splits large personal inventories", () => {
   }
 });
 
-test("buildInventoryMessagePages renders visible text messages", () => {
-  const pages = buildInventoryMessagePages({ table_id: 101, name: "Alquimia" }, [
-    { item_id: 102, name: "Leña", quantity: 120, priority: "high" },
-  ]);
-
-  assert.equal(pages.length, 1);
-  assert.deepEqual(pages[0].embeds, []);
-  assert.match(pages[0].content, /INVENTARIO 101/);
-  assert.match(pages[0].content, /102 │ A/);
-});
-
-test("buildInventoryMessagePages splits long visible messages", () => {
-  const pages = buildInventoryMessagePages(
-    { table_id: 105, name: "Peletería" },
-    Array.from({ length: 120 }, (_, index) => ({
-      item_id: index + 1,
-      name: `Material extenso ${index + 1}`,
-      quantity: 100 + index,
-      priority: index % 3 === 0 ? "high" : "none",
-    })),
-  );
-
-  assert.ok(pages.length > 1);
-  assert.match(pages[0].content, /\(1\/[0-9]+\)/);
-  for (const page of pages) {
-    assert.deepEqual(page.embeds, []);
-    assert.ok(page.content.length <= 1800);
-  }
-});
-
 test("buildGeneralInventoryPages keeps Discord embed payloads below one-message limits", () => {
   const inventories = Array.from({ length: 5 }, (_, inventoryIndex) => ({
     table_id: 101 + inventoryIndex,
@@ -125,29 +93,6 @@ test("buildGeneralInventoryPages keeps Discord embed payloads below one-message 
       0,
     );
     assert.ok(totalText <= 5200);
-  }
-});
-
-test("buildGeneralInventoryMessagePages keeps visible messages below Discord limits", () => {
-  const inventories = Array.from({ length: 5 }, (_, inventoryIndex) => ({
-    table_id: 101 + inventoryIndex,
-    channel_id: String(1000 + inventoryIndex),
-    name: `Gremio ${inventoryIndex + 1}`,
-    items: Array.from({ length: 30 }, (_, itemIndex) => ({
-      item_id: itemIndex + 1,
-      name: `Material muy largo ${inventoryIndex + 1}-${itemIndex + 1}`,
-      quantity: 1000 + itemIndex,
-      priority: itemIndex % 2 === 0 ? "high" : "none",
-    })),
-  }));
-
-  const pages = buildGeneralInventoryMessagePages({ inventories });
-
-  assert.ok(pages.length > 1);
-  assert.match(pages[0].content, /TABLA 101/);
-  for (const page of pages) {
-    assert.deepEqual(page.embeds, []);
-    assert.ok(page.content.length <= 1800);
   }
 });
 
