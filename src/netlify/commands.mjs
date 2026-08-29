@@ -111,6 +111,17 @@ const optionalLimitOption = {
   max_value: 20,
 };
 
+const viewFormatOption = {
+  name: "formato",
+  description: "Formato para mostrar la tabla solo para ti.",
+  type: ApplicationCommandOptionType.STRING,
+  required: false,
+  choices: [
+    { name: "Embed bonito", value: "embed" },
+    { name: "Texto compatible", value: "texto" },
+  ],
+};
+
 export const ADMIN_COMMANDS = new Set(["borrar"]);
 
 export const COMMANDS = [
@@ -170,6 +181,7 @@ export const COMMANDS = [
     description: "Muestra el inventario de este canal solo para ti.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
+    options: [viewFormatOption],
   },
   {
     name: "recrear_inventario",

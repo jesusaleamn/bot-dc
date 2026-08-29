@@ -115,6 +115,18 @@ test("pedidos_vincular asks for a Discord channel", () => {
   assert.equal(channel.type, 7);
 });
 
+test("ver can choose embed or text format", () => {
+  const command = commandByName("ver");
+  const format = optionByName(command, "formato");
+
+  assert.equal(format.required, false);
+  assert.equal(format.type, 3);
+  assert.deepEqual(
+    format.choices.map((choice) => choice.value),
+    ["embed", "texto"],
+  );
+});
+
 test("only borrar requires elevated Discord permissions", () => {
   assert.deepEqual([...ADMIN_COMMANDS], ["borrar"]);
 });

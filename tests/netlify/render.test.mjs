@@ -6,6 +6,7 @@ import {
   buildGeneralInventoryEmbeds,
   buildGeneralInventoryPages,
   buildInventoryPages,
+  buildInventoryTextPages,
   buildOrdersEmbed,
   renderInventory,
 } from "../../src/netlify/render.mjs";
@@ -67,6 +68,35 @@ test("buildInventoryPages splits large personal inventories", () => {
   assert.match(pages[0].title, /\(1\/2\)|\(1\/3\)|\(1\/4\)/);
   for (const page of pages) {
     assert.ok(page.description.length <= 3600);
+  }
+});
+
+test("buildInventoryTextPages renders visible text for users without embeds", () => {
+  const pages = buildInventoryTextPages({ table_id: 101, name: "Alquimia" }, [
+    { item_id: 102, name: "Leña", quantity: 120, priority: "high" },
+  ]);
+
+  assert.equal(pages.length, 1);
+  assert.match(pages[0], /INVENTARIO 101/);
+  assert.match(pages[0], /102 │ A/);
+  assert.match(pages[0], /120/);
+});
+
+test("buildInventoryTextPages splits large text responses below Discord limits", () => {
+  const pages = buildInventoryTextPages(
+    { table_id: 105, name: "Peletería" },
+    Array.from({ length: 120 }, (_, index) => ({
+      item_id: index + 1,
+      name: `Material extenso ${index + 1}`,
+      quantity: 100 + index,
+      priority: index % 3 === 0 ? "high" : "none",
+    })),
+  );
+
+  assert.ok(pages.length > 1);
+  assert.match(pages[0], /\(1\/[0-9]+\)/);
+  for (const page of pages) {
+    assert.ok(page.length <= 1800);
   }
 });
 

@@ -9,6 +9,7 @@ import {
   buildGeneralInventoryPages,
   buildHelpEmbed,
   buildInventoryPages,
+  buildInventoryTextPages,
   buildOrdersEmbed,
 } from "./render.mjs";
 import { deleteInventoryMessage, editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
@@ -126,7 +127,7 @@ async function handleCommand(interaction) {
     case "borrar":
       return handleDelete(context, options);
     case "ver":
-      return handleView(context);
+      return handleView(context, options);
     case "recrear_inventario":
       return handleRecreate(context);
     case "historial":
@@ -233,11 +234,25 @@ async function handleDelete(context, options) {
   return refreshThenReply(context, SUCCESS_MESSAGE);
 }
 
-async function handleView(context) {
+async function handleView(context, options = {}) {
   const view = await getInventoryView(context);
+
+  if (options.formato === "texto") {
+    const textPages = buildInventoryTextPages(view.inventory, view.items);
+    const content = textPages.length > 1
+      ? `${textPages[0]}\n\nMostrando pagina 1 de ${textPages.length}. El mensaje fijo del canal tiene todas las paginas.`
+      : textPages[0];
+
+    return interactionMessage({ content });
+  }
+
   const pages = buildInventoryPages(view.inventory, view.items);
+  const fallbackText = pages.length > 1
+    ? `Mostrando pagina 1 de ${pages.length}. El mensaje fijo del canal tiene todas las paginas.\nSi ves este mensaje sin tabla, usa \`/ver formato:texto\`.`
+    : "Si ves este mensaje sin tabla, usa `/ver formato:texto`.";
+
   return interactionMessage({
-    content: pages.length > 1 ? `Mostrando pagina 1 de ${pages.length}. El mensaje fijo del canal tiene todas las paginas.` : undefined,
+    content: fallbackText,
     embeds: [pages[0]],
   });
 }

@@ -7,6 +7,7 @@ const INVENTORY_EMBED_DESCRIPTION_LIMIT = 3600;
 const GENERAL_EMBED_DESCRIPTION_LIMIT = 3600;
 const GENERAL_PAGE_EMBED_LIMIT = 10;
 const GENERAL_PAGE_TEXT_LIMIT = 5200;
+const INVENTORY_TEXT_MESSAGE_LIMIT = 1800;
 
 const PRIORITY_META = {
   high: { mark: "A", icon: "🔴", label: "Alta" },
@@ -88,6 +89,22 @@ export function buildInventoryPages(inventory, items) {
   }));
 }
 
+export function buildInventoryTextPages(inventory, items) {
+  const name = inventoryName(inventory);
+  const tableId = inventoryTableId(inventory);
+  const footerText = `Inventario compartido de este canal · ${priorityLegend()}`;
+
+  if (!items.length) {
+    return [inventoryTextContent(inventoryTitle(name, tableId), [], footerText)];
+  }
+
+  const chunks = splitInventoryItemsForText(items, inventoryTitle(name, tableId), footerText);
+  return chunks.map((chunk, index) => {
+    const suffix = chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : "";
+    return inventoryTextContent(inventoryTitle(name, tableId, suffix), chunk, footerText);
+  });
+}
+
 export function buildInventoryEmbed(inventory, items) {
   return buildInventoryPages(inventory, items)[0];
 }
@@ -164,6 +181,14 @@ function buildGeneralInventoryEmbed(inventory, description, titleSuffix = "") {
   };
 }
 
+function inventoryTextContent(title, items, footerText) {
+  const description = items.length
+    ? formatInventoryTableDescription([...inventoryHeaderLines(), ...items.map(inventoryItemLine)])
+    : "> No hay objetos registrados.";
+
+  return `**${title}**\n${description}\n${footerText}`;
+}
+
 function embedTextLength(embed) {
   const fieldsLength = (embed.fields ?? []).reduce(
     (total, field) => total + String(field.name ?? "").length + String(field.value ?? "").length,
@@ -190,6 +215,30 @@ function splitInventoryItems(items, descriptionLimit) {
     ]);
 
     if (currentItems.length > 0 && nextDescription.length > descriptionLimit) {
+      chunks.push(currentItems);
+      currentItems = [item];
+    } else {
+      currentItems = nextItems;
+    }
+  }
+
+  if (currentItems.length) {
+    chunks.push(currentItems);
+  }
+
+  return chunks;
+}
+
+function splitInventoryItemsForText(items, baseTitle, footerText) {
+  const sortedItems = [...items].sort((a, b) => a.item_id - b.item_id);
+  const chunks = [];
+  let currentItems = [];
+
+  for (const item of sortedItems) {
+    const nextItems = [...currentItems, item];
+    const nextContent = inventoryTextContent(`${baseTitle} (999/999)`, nextItems, footerText);
+
+    if (currentItems.length > 0 && nextContent.length > INVENTORY_TEXT_MESSAGE_LIMIT) {
       chunks.push(currentItems);
       currentItems = [item];
     } else {
@@ -306,7 +355,8 @@ export function buildHelpEmbed() {
       "`/restar id:2 cantidad:101` resta cantidad. Si omites cantidad, resta 1.",
       "`/editar id:1 nombre:Nuevo nombre` renombra un objeto.",
       "`/borrar id:1` elimina un objeto. Requiere permisos.",
-      "`/ver` muestra el inventario solo para ti.",
+      "`/ver formato:embed` muestra el inventario bonito solo para ti.",
+      "`/ver formato:texto` muestra el inventario compatible solo para ti.",
       "`/recrear_inventario` vuelve a publicar el mensaje fijo.",
       "`/historial limite:10` muestra cambios recientes.",
       "`/prioridad id:1 nivel:alta` marca la prioridad de un objeto.",
