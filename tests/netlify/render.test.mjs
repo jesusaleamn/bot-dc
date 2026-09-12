@@ -270,6 +270,16 @@ test("member pages split only at the description limit without losing rows", () 
   for (const page of pages) assert.ok(page.description.length <= 4096);
 });
 
+test("member balances distinguish negative, low, zero and healthy contributions", () => {
+  const summaries = [-20, 0, 10, 11].map((net, index) => ({
+    user_id: String(index), item_id: 1, item_name: "Material",
+    total_added: 100, total_removed: 100 - net, net_total: net,
+  }));
+  const pages = buildMemberActivityPages({ inventory: { name: "Alquimia", table_id: 101 }, summaries, recentReasons: [] });
+  assert.deepEqual(pages.map((page) => page.color), [0xc53030, 0xf59e0b, 0xf59e0b, 0x2f855a]);
+  for (const [index, icon] of ["🔴", "🟠", "🟠", "🟢"].entries()) assert.ok(pages[index].description.includes(icon));
+});
+
 test("economy pages retain all materials with large totals within Discord limits", () => {
   const summaries = Array.from({ length: 50 }, (_, index) => ({
     item_id: index + 1, item_name: "Material largo", sold_quantity: "999999999999999999",

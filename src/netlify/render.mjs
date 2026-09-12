@@ -389,8 +389,9 @@ export function buildMemberActivityPages(view) {
       pages.push({
         title: `👥 MIEMBROS — ${view.inventory.name.trim().toUpperCase()}`,
         description: `${prefix}${formatMemberActivityTable(chunk)}`,
-        color: 0x5865f2,
-        footer: { text: `Tabla ${view.inventory.table_id} · ${chunk.length} filas de actividad · Neto = aportado menos retirado` },
+        color: rows.some((row) => memberBalanceStatus(row) === "negative") ? 0xc53030
+          : rows.some((row) => memberBalanceStatus(row) === "low") ? 0xf59e0b : 0x2f855a,
+        footer: { text: `Tabla ${view.inventory.table_id} · ${chunk.length} filas · Rojo: negativo · Naranja: saldo hasta 10% de lo aportado · Verde: superior al 10%` },
       });
     };
     for (const row of rows) {
@@ -478,7 +479,7 @@ function buildMemberActivityFields(summaries) {
 function formatMemberActivityTable(entries) {
   const visibleEntries = entries;
   const lines = [
-    `${"ID".padStart(ITEM_ID_WIDTH)} MATERIAL             ${"+".padStart(6)} ${"-".padStart(6)} ${"NETO".padStart(7)}`,
+    `${"ID".padStart(ITEM_ID_WIDTH)} MATERIAL             ${"+".padStart(6)} ${"-".padStart(6)} ${"NETO".padStart(7)} ESTADO`,
     ...visibleEntries.map((entry) => {
       const material = shorten(entry.item_name, 20);
       return [
@@ -487,6 +488,7 @@ function formatMemberActivityTable(entries) {
         String(entry.total_added).padStart(6),
         String(entry.total_removed).padStart(6),
         formatSigned(entry.net_total).padStart(7),
+        memberBalanceStatus(entry) === "negative" ? "🔴" : memberBalanceStatus(entry) === "low" ? "🟠" : "🟢",
       ].join(" ");
     }),
   ];
@@ -496,6 +498,13 @@ function formatMemberActivityTable(entries) {
   }
 
   return formatPlainCodeBlock(lines);
+}
+
+function memberBalanceStatus(entry) {
+  const net = Number(entry.net_total);
+  if (net < 0) return "negative";
+  if (net <= Number(entry.total_added) * 0.1) return "low";
+  return "positive";
 }
 
 function formatRecentReasons(entries) {

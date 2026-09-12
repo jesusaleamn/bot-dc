@@ -684,7 +684,7 @@ async function refreshMemberBoardsBestEffort(context) {
   }
 }
 
-async function refreshMemberBoards(context) {
+export async function refreshMemberBoards(context) {
   const view = await getInventoryView(context);
   const boards = await getMemberBoardsForInventory({ inventoryId: view.inventory.id });
 
