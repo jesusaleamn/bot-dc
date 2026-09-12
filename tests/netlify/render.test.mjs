@@ -3,10 +3,14 @@ import test from "node:test";
 
 import {
   buildActivityEmbed,
+  buildEconomyEmbed,
+  buildEconomyPages,
   buildGeneralInventoryEmbeds,
   buildGeneralInventoryPages,
   buildInventoryPages,
   buildInventoryTextPages,
+  buildMemberActivityEmbed,
+  buildMemberActivityPages,
   buildOrdersEmbed,
   renderInventory,
 } from "../../src/netlify/render.mjs";
@@ -164,4 +168,102 @@ test("buildActivityEmbed mentions Discord users", () => {
 
   assert.match(embed.description, /<@123>/);
   assert.match(embed.description, /Neto: `-110`/);
+});
+
+test("buildMemberActivityEmbed groups movement totals by Discord user", () => {
+  const embed = buildMemberActivityEmbed({
+    inventory: { table_id: 101, name: "Alquimia" },
+    summaries: [
+      {
+        user_id: "123",
+        item_id: 1,
+        item_name: "Poción menor",
+        total_added: 150,
+        total_removed: 20,
+        net_total: 130,
+        add_count: 2,
+        subtract_count: 1,
+      },
+    ],
+    recentReasons: [
+      {
+        created_at: "2026-09-12T10:15:00.000Z",
+        user_id: "123",
+        operation: "sumar",
+        item_id: 1,
+        item_name: "Poción menor",
+        amount: 150,
+        reason: "Entrega de guardia",
+      },
+    ],
+  });
+
+  assert.equal(embed.title, "👥 MIEMBROS — ALQUIMIA");
+  assert.match(embed.description, /Motivos recientes/);
+  assert.match(embed.description, /Entrega de guardia/);
+  assert.match(embed.fields[0].value, /<@123>/);
+  assert.match(embed.fields[0].value, /Poción menor/);
+  assert.match(embed.fields[0].value, /\+130/);
+});
+
+test("buildEconomyEmbed shows sales, purchases, and balance", () => {
+  const embed = buildEconomyEmbed({
+    inventory: { table_id: 101, name: "Alquimia" },
+    totals: {
+      incomeTotal: 1000,
+      expenseTotal: 250,
+      balance: 750,
+    },
+    summaries: [
+      {
+        item_id: 1,
+        item_name: "Poción menor",
+        sold_quantity: 10,
+        bought_quantity: 2,
+        income_total: 1000,
+        expense_total: 250,
+        balance: 750,
+      },
+    ],
+    recentEntries: [
+      {
+        created_at: "2026-09-12T10:15:00.000Z",
+        user_id: "123",
+        operation: "venta",
+        item_id: 1,
+        item_name: "Poción menor",
+        quantity: 10,
+        total: 1000,
+        reason: "Pedido de la guardia",
+      },
+    ],
+  });
+
+  assert.equal(embed.title, "💰 ECONOMÍA — ALQUIMIA");
+  assert.match(embed.fields[0].value, /Ingresos: `1.000`/);
+  assert.match(embed.fields[0].value, /Neto: `\+750`/);
+  assert.match(embed.fields[1].value, /Poción menor/);
+  assert.match(embed.fields[2].value, /Pedido de la guardia/);
+});
+
+test("member pages retain every user and material within Discord field limits", () => {
+  const summaries = Array.from({ length: 120 }, (_, index) => ({
+    user_id: String(Math.floor(index / 20)), item_id: index + 1,
+    item_name: "Material largo", total_added: 100, total_removed: 20, net_total: 80,
+  }));
+  const pages = buildMemberActivityPages({ inventory: { name: "Alquimia", table_id: 101 }, summaries, recentReasons: [] });
+  const rendered = pages.map((page) => page.fields.map((field) => field.value).join("\n")).join("\n");
+  for (const row of summaries) assert.match(rendered, new RegExp(`\\b${row.item_id} Material`));
+  for (const page of pages) for (const field of page.fields) assert.ok(field.value.length <= 1024);
+});
+
+test("economy pages retain all materials with large totals within Discord limits", () => {
+  const summaries = Array.from({ length: 50 }, (_, index) => ({
+    item_id: index + 1, item_name: "Material largo", sold_quantity: "999999999999999999",
+    bought_quantity: "999999999999999999", balance: 999999999999999,
+  }));
+  const pages = buildEconomyPages({ inventory: { name: "Alquimia", table_id: 101 },
+    totals: { incomeTotal: 0, expenseTotal: 0, balance: 0 }, summaries, recentEntries: [] });
+  assert.equal(pages.length, 9);
+  for (const page of pages) for (const field of page.fields) assert.ok(field.value.length <= 1024);
 });

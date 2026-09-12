@@ -25,6 +25,27 @@ function getSql() {
   return sqlClient;
 }
 
+export async function getActivityBoardPages({ guildId, channelId, boardType }) {
+  await ensureSchema();
+  const sql = getSql();
+  return sql`SELECT position, message_id FROM inventory_activity_board_pages
+    WHERE guild_id = ${guildId} AND channel_id = ${channelId} AND board_type = ${boardType}
+    ORDER BY position`;
+}
+
+export async function setActivityBoardPage({ guildId, channelId, boardType, position, messageId }) {
+  await ensureSchema();
+  const sql = getSql();
+  if (!messageId) {
+    await sql`DELETE FROM inventory_activity_board_pages WHERE guild_id = ${guildId}
+      AND channel_id = ${channelId} AND board_type = ${boardType} AND position = ${position}`;
+    return;
+  }
+  await sql`INSERT INTO inventory_activity_board_pages (guild_id, channel_id, board_type, position, message_id)
+    VALUES (${guildId}, ${channelId}, ${boardType}, ${position}, ${messageId})
+    ON CONFLICT (guild_id, channel_id, board_type, position) DO UPDATE SET message_id = EXCLUDED.message_id`;
+}
+
 function cleanName(value) {
   const cleaned = String(value ?? "").trim().replace(/\s+/g, " ");
   if (!cleaned) {
@@ -34,6 +55,26 @@ function cleanName(value) {
     throw new InventoryError("❌ El nombre no puede superar 100 caracteres.");
   }
   return cleaned;
+}
+
+function cleanOptionalText(value, { maxLength, label }) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const cleaned = String(value).trim().replace(/\s+/g, " ");
+  if (!cleaned) {
+    return null;
+  }
+  if (cleaned.length > maxLength) {
+    throw new InventoryError(`❌ ${label} no puede superar ${maxLength} caracteres.`);
+  }
+
+  return cleaned;
+}
+
+function cleanReason(value) {
+  return cleanOptionalText(value, { maxLength: 200, label: "El motivo" });
 }
 
 function isUniqueViolation(error) {
@@ -197,6 +238,69 @@ export async function ensureSchema() {
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_history_guild_id ON inventory_history (guild_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_history_channel_id ON inventory_history (channel_id)`;
     await sql`CREATE INDEX IF NOT EXISTS ix_inventory_history_created_at ON inventory_history (created_at)`;
+    await sql`ALTER TABLE inventory_history ADD COLUMN IF NOT EXISTS reason VARCHAR(200)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_activity_board_pages (
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        board_type VARCHAR(16) NOT NULL CHECK (board_type IN ('members', 'economy')),
+        position INTEGER NOT NULL,
+        message_id VARCHAR(32) NOT NULL,
+        PRIMARY KEY (guild_id, channel_id, board_type, position)
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_member_boards (
+        id BIGSERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        board_channel_id VARCHAR(32) NOT NULL,
+        inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+        message_id VARCHAR(32),
+        created_by VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_member_board_channel UNIQUE (guild_id, board_channel_id)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_member_boards_inventory_id ON inventory_member_boards (inventory_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_member_boards_guild_id ON inventory_member_boards (guild_id)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_economy_entries (
+        id BIGSERIAL PRIMARY KEY,
+        inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+        guild_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        item_id INTEGER NOT NULL,
+        item_name VARCHAR(100) NOT NULL,
+        operation VARCHAR(16) NOT NULL,
+        quantity BIGINT NOT NULL,
+        total BIGINT NOT NULL,
+        reason VARCHAR(200),
+        user_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT ck_economy_operation CHECK (operation IN ('venta', 'compra')),
+        CONSTRAINT ck_economy_quantity_positive CHECK (quantity > 0),
+        CONSTRAINT ck_economy_total_non_negative CHECK (total >= 0)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_economy_entries_inventory_id ON inventory_economy_entries (inventory_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_economy_entries_guild_id ON inventory_economy_entries (guild_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_economy_entries_created_at ON inventory_economy_entries (created_at)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS inventory_economy_boards (
+        id BIGSERIAL PRIMARY KEY,
+        guild_id VARCHAR(32) NOT NULL,
+        board_channel_id VARCHAR(32) NOT NULL,
+        inventory_id BIGINT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+        message_id VARCHAR(32),
+        created_by VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_economy_board_channel UNIQUE (guild_id, board_channel_id)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_economy_boards_inventory_id ON inventory_economy_boards (inventory_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS ix_inventory_economy_boards_guild_id ON inventory_economy_boards (guild_id)`;
     await sql`
       CREATE TABLE IF NOT EXISTS inventory_orders (
         id BIGSERIAL PRIMARY KEY,
@@ -685,9 +789,10 @@ export async function createItem({ guildId, channelId, itemId, name, quantity, u
   }
 }
 
-export async function addQuantity({ guildId, channelId, itemId, amount, userId }) {
+export async function addQuantity({ guildId, channelId, itemId, amount, userId, reason = null }) {
   await ensureSchema();
   const sql = getSql();
+  const cleanedReason = cleanReason(reason);
 
   const [row] = await sql`
     WITH updated AS (
@@ -719,10 +824,10 @@ export async function addQuantity({ guildId, channelId, itemId, amount, userId }
     history AS (
       INSERT INTO inventory_history (
         inventory_id, guild_id, channel_id, item_id, item_name, operation,
-        amount, before_quantity, after_quantity, user_id
+        amount, before_quantity, after_quantity, reason, user_id
       )
       SELECT inventory_id, guild_id, channel_id, item_id, name, 'sumar',
-        ${amount}, before_quantity, after_quantity, ${userId}
+        ${amount}, before_quantity, after_quantity, ${cleanedReason}, ${userId}
       FROM updated
       RETURNING id
     )
@@ -738,9 +843,10 @@ export async function addQuantity({ guildId, channelId, itemId, amount, userId }
   return normalizeChange(row);
 }
 
-export async function subtractQuantity({ guildId, channelId, itemId, amount, userId }) {
+export async function subtractQuantity({ guildId, channelId, itemId, amount, userId, reason = null }) {
   await ensureSchema();
   const sql = getSql();
+  const cleanedReason = cleanReason(reason);
 
   const [row] = await sql`
     WITH updated AS (
@@ -773,10 +879,10 @@ export async function subtractQuantity({ guildId, channelId, itemId, amount, use
     history AS (
       INSERT INTO inventory_history (
         inventory_id, guild_id, channel_id, item_id, item_name, operation,
-        amount, before_quantity, after_quantity, user_id
+        amount, before_quantity, after_quantity, reason, user_id
       )
       SELECT inventory_id, guild_id, channel_id, item_id, name, 'restar',
-        ${amount}, before_quantity, after_quantity, ${userId}
+        ${amount}, before_quantity, after_quantity, ${cleanedReason}, ${userId}
       FROM updated
       RETURNING id
     )
@@ -984,6 +1090,283 @@ export async function setItemPriority({ guildId, channelId, itemId, priority, us
   }
 
   return normalizeItem(row);
+}
+
+export async function linkMemberBoard({ guildId, boardChannelId, inventoryChannelId, userId }) {
+  await ensureSchema();
+  const inventory = await requireInventory({ guildId, channelId: inventoryChannelId });
+
+  await upsertMemberBoard({
+    guildId,
+    boardChannelId,
+    inventoryId: inventory.id,
+    userId,
+  });
+
+  return getMemberActivityView({ guildId, channelId: boardChannelId });
+}
+
+export async function getMemberActivityView({ guildId, channelId }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await resolveMemberInventory({ guildId, channelId });
+
+  const summaries = await sql`
+    SELECT
+      user_id,
+      item_id,
+      COALESCE(
+        (array_agg(item_name ORDER BY created_at DESC) FILTER (WHERE item_name IS NOT NULL))[1],
+        'Material'
+      ) AS item_name,
+      COALESCE(SUM(amount) FILTER (WHERE operation = 'sumar'), 0) AS total_added,
+      COALESCE(SUM(amount) FILTER (WHERE operation = 'restar'), 0) AS total_removed,
+      COUNT(*) FILTER (WHERE operation = 'sumar') AS add_count,
+      COUNT(*) FILTER (WHERE operation = 'restar') AS subtract_count,
+      MAX(created_at) AS last_at
+    FROM inventory_history
+    WHERE inventory_id = ${inventory.id}
+      AND operation IN ('sumar', 'restar')
+    GROUP BY user_id, item_id
+    ORDER BY user_id ASC, item_id ASC
+  `;
+
+  const recentReasons = await sql`
+    SELECT created_at, user_id, operation, item_id, item_name, amount, reason
+    FROM inventory_history
+    WHERE inventory_id = ${inventory.id}
+      AND operation IN ('sumar', 'restar')
+      AND reason IS NOT NULL
+      AND reason <> ''
+    ORDER BY created_at DESC, id DESC
+    LIMIT 10
+  `;
+
+  return {
+    inventory,
+    board: {
+      channelId: inventory.member_channel_id,
+      messageId: inventory.member_message_id,
+    },
+    summaries: summaries.map(normalizeMemberActivitySummary),
+    recentReasons: recentReasons.map(normalizeHistoryReason),
+  };
+}
+
+export async function getMemberBoardsForInventory({ inventoryId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const rows = await sql`
+    SELECT board_channel_id, message_id
+    FROM inventory_member_boards
+    WHERE inventory_id = ${inventoryId}
+      AND message_id IS NOT NULL
+    ORDER BY board_channel_id ASC
+  `;
+
+  return rows.map((row) => ({
+    channelId: row.board_channel_id,
+    messageId: row.message_id,
+  }));
+}
+
+export async function setMemberBoardMessageId({ guildId, channelId, inventoryId = null, messageId, userId = null }) {
+  await ensureSchema();
+  const inventory = inventoryId
+    ? await requireInventoryById({ guildId, inventoryId })
+    : await resolveMemberInventory({ guildId, channelId });
+
+  const board = await upsertMemberBoard({
+    guildId,
+    boardChannelId: channelId,
+    inventoryId: inventory.id,
+    messageId,
+    userId,
+  });
+
+  return {
+    ...inventory,
+    member_channel_id: board.board_channel_id,
+    member_message_id: board.message_id,
+  };
+}
+
+export async function linkEconomyBoard({ guildId, boardChannelId, inventoryChannelId, userId }) {
+  await ensureSchema();
+  const inventory = await requireInventory({ guildId, channelId: inventoryChannelId });
+
+  await upsertEconomyBoard({
+    guildId,
+    boardChannelId,
+    inventoryId: inventory.id,
+    userId,
+  });
+
+  return getEconomyView({ guildId, channelId: boardChannelId });
+}
+
+export async function recordEconomyEntry({
+  guildId,
+  channelId,
+  itemId,
+  quantity,
+  total,
+  operation,
+  userId,
+  reason = null,
+}) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await resolveEconomyInventory({ guildId, channelId });
+  const normalizedOperation = normalizeEconomyOperation(operation);
+  const cleanedReason = cleanReason(reason);
+
+  const [row] = await sql`
+    WITH item AS (
+      SELECT item_id, name
+      FROM inventory_items
+      WHERE inventory_id = ${inventory.id}
+        AND item_id = ${itemId}
+    ),
+    inserted AS (
+      INSERT INTO inventory_economy_entries (
+        inventory_id,
+        guild_id,
+        channel_id,
+        item_id,
+        item_name,
+        operation,
+        quantity,
+        total,
+        reason,
+        user_id
+      )
+      SELECT
+        ${inventory.id},
+        ${guildId},
+        ${channelId},
+        item.item_id,
+        item.name,
+        ${normalizedOperation},
+        ${quantity},
+        ${total},
+        ${cleanedReason},
+        ${userId}
+      FROM item
+      RETURNING created_at, user_id, operation, item_id, item_name, quantity, total, reason
+    )
+    SELECT *
+    FROM inserted
+  `;
+
+  if (!row) {
+    throw new ItemNotFoundError(itemId);
+  }
+
+  return normalizeEconomyEntry(row);
+}
+
+export async function getEconomyView({ guildId, channelId }) {
+  await ensureSchema();
+  const sql = getSql();
+  const inventory = await resolveEconomyInventory({ guildId, channelId });
+
+  const [totals] = await sql`
+    SELECT
+      COALESCE(SUM(total) FILTER (WHERE operation = 'venta'), 0) AS income_total,
+      COALESCE(SUM(total) FILTER (WHERE operation = 'compra'), 0) AS expense_total
+    FROM inventory_economy_entries
+    WHERE inventory_id = ${inventory.id}
+  `;
+
+  const summaries = await sql`
+    SELECT
+      item_id,
+      COALESCE(
+        (array_agg(item_name ORDER BY created_at DESC) FILTER (WHERE item_name IS NOT NULL))[1],
+        'Material'
+      ) AS item_name,
+      COALESCE(SUM(quantity) FILTER (WHERE operation = 'venta'), 0) AS sold_quantity,
+      COALESCE(SUM(quantity) FILTER (WHERE operation = 'compra'), 0) AS bought_quantity,
+      COALESCE(SUM(total) FILTER (WHERE operation = 'venta'), 0) AS income_total,
+      COALESCE(SUM(total) FILTER (WHERE operation = 'compra'), 0) AS expense_total,
+      COUNT(*) FILTER (WHERE operation = 'venta') AS sale_count,
+      COUNT(*) FILTER (WHERE operation = 'compra') AS purchase_count
+    FROM inventory_economy_entries
+    WHERE inventory_id = ${inventory.id}
+    GROUP BY item_id
+    ORDER BY ABS(
+      COALESCE(SUM(total) FILTER (WHERE operation = 'venta'), 0)
+      - COALESCE(SUM(total) FILTER (WHERE operation = 'compra'), 0)
+    ) DESC,
+    item_id ASC
+  `;
+
+  const recentEntries = await sql`
+    SELECT created_at, user_id, operation, item_id, item_name, quantity, total, reason
+    FROM inventory_economy_entries
+    WHERE inventory_id = ${inventory.id}
+    ORDER BY created_at DESC, id DESC
+    LIMIT 10
+  `;
+
+  const incomeTotal = Number(totals?.income_total ?? 0);
+  const expenseTotal = Number(totals?.expense_total ?? 0);
+
+  return {
+    inventory,
+    board: {
+      channelId: inventory.economy_channel_id,
+      messageId: inventory.economy_message_id,
+    },
+    totals: {
+      incomeTotal,
+      expenseTotal,
+      balance: incomeTotal - expenseTotal,
+    },
+    summaries: summaries.map(normalizeEconomySummary),
+    recentEntries: recentEntries.map(normalizeEconomyEntry),
+  };
+}
+
+export async function getEconomyBoardsForInventory({ inventoryId }) {
+  await ensureSchema();
+  const sql = getSql();
+
+  const rows = await sql`
+    SELECT board_channel_id, message_id
+    FROM inventory_economy_boards
+    WHERE inventory_id = ${inventoryId}
+      AND message_id IS NOT NULL
+    ORDER BY board_channel_id ASC
+  `;
+
+  return rows.map((row) => ({
+    channelId: row.board_channel_id,
+    messageId: row.message_id,
+  }));
+}
+
+export async function setEconomyMessageId({ guildId, channelId, inventoryId = null, messageId, userId = null }) {
+  await ensureSchema();
+  const inventory = inventoryId
+    ? await requireInventoryById({ guildId, inventoryId })
+    : await resolveEconomyInventory({ guildId, channelId });
+
+  const board = await upsertEconomyBoard({
+    guildId,
+    boardChannelId: channelId,
+    inventoryId: inventory.id,
+    messageId,
+    userId,
+  });
+
+  return {
+    ...inventory,
+    economy_channel_id: board.board_channel_id,
+    economy_message_id: board.message_id,
+  };
 }
 
 export async function linkOrdersBoard({ guildId, boardChannelId, inventoryChannelId, userId }) {
@@ -1329,7 +1712,8 @@ export async function listHistory({ guildId, channelId, limit = 10 }) {
       before_quantity,
       after_quantity,
       before_name,
-      after_name
+      after_name,
+      reason
     FROM inventory_history
     WHERE inventory_id = ${inventory.id}
     ORDER BY created_at DESC, id DESC
@@ -1389,6 +1773,86 @@ async function resolveOrderInventory({ guildId, channelId }) {
   };
 }
 
+async function resolveMemberInventory({ guildId, channelId }) {
+  const sql = getSql();
+  const [linked] = await sql`
+    SELECT
+      inv.id,
+      inv.guild_id,
+      inv.channel_id,
+      inv.table_id,
+      inv.name,
+      inv.message_id,
+      inv.orders_message_id,
+      inv.version,
+      board.board_channel_id AS member_channel_id,
+      board.message_id AS member_message_id
+    FROM inventory_member_boards board
+    JOIN inventories inv ON inv.id = board.inventory_id
+    WHERE board.guild_id = ${guildId}
+      AND board.board_channel_id = ${channelId}
+  `;
+
+  if (linked) {
+    return linked;
+  }
+
+  const inventory = await requireInventory({ guildId, channelId });
+  const [board] = await sql`
+    SELECT board_channel_id, message_id
+    FROM inventory_member_boards
+    WHERE guild_id = ${guildId}
+      AND board_channel_id = ${channelId}
+      AND inventory_id = ${inventory.id}
+  `;
+
+  return {
+    ...inventory,
+    member_channel_id: board?.board_channel_id ?? channelId,
+    member_message_id: board?.message_id ?? null,
+  };
+}
+
+async function resolveEconomyInventory({ guildId, channelId }) {
+  const sql = getSql();
+  const [linked] = await sql`
+    SELECT
+      inv.id,
+      inv.guild_id,
+      inv.channel_id,
+      inv.table_id,
+      inv.name,
+      inv.message_id,
+      inv.orders_message_id,
+      inv.version,
+      board.board_channel_id AS economy_channel_id,
+      board.message_id AS economy_message_id
+    FROM inventory_economy_boards board
+    JOIN inventories inv ON inv.id = board.inventory_id
+    WHERE board.guild_id = ${guildId}
+      AND board.board_channel_id = ${channelId}
+  `;
+
+  if (linked) {
+    return linked;
+  }
+
+  const inventory = await requireInventory({ guildId, channelId });
+  const [board] = await sql`
+    SELECT board_channel_id, message_id
+    FROM inventory_economy_boards
+    WHERE guild_id = ${guildId}
+      AND board_channel_id = ${channelId}
+      AND inventory_id = ${inventory.id}
+  `;
+
+  return {
+    ...inventory,
+    economy_channel_id: board?.board_channel_id ?? channelId,
+    economy_message_id: board?.message_id ?? null,
+  };
+}
+
 async function requireInventoryById({ guildId, inventoryId }) {
   const sql = getSql();
   const [inventory] = await sql`
@@ -1430,6 +1894,38 @@ async function upsertOrderBoard({ guildId, boardChannelId, inventoryId, messageI
     SET
       inventory_id = EXCLUDED.inventory_id,
       message_id = COALESCE(EXCLUDED.message_id, inventory_order_boards.message_id),
+      updated_at = NOW()
+    RETURNING board_channel_id, message_id
+  `;
+
+  return board;
+}
+
+async function upsertMemberBoard({ guildId, boardChannelId, inventoryId, messageId = null, userId = null }) {
+  const sql = getSql();
+  const [board] = await sql`
+    INSERT INTO inventory_member_boards (guild_id, board_channel_id, inventory_id, message_id, created_by)
+    VALUES (${guildId}, ${boardChannelId}, ${inventoryId}, ${messageId}, ${userId ?? "0"})
+    ON CONFLICT (guild_id, board_channel_id) DO UPDATE
+    SET
+      inventory_id = EXCLUDED.inventory_id,
+      message_id = COALESCE(EXCLUDED.message_id, inventory_member_boards.message_id),
+      updated_at = NOW()
+    RETURNING board_channel_id, message_id
+  `;
+
+  return board;
+}
+
+async function upsertEconomyBoard({ guildId, boardChannelId, inventoryId, messageId = null, userId = null }) {
+  const sql = getSql();
+  const [board] = await sql`
+    INSERT INTO inventory_economy_boards (guild_id, board_channel_id, inventory_id, message_id, created_by)
+    VALUES (${guildId}, ${boardChannelId}, ${inventoryId}, ${messageId}, ${userId ?? "0"})
+    ON CONFLICT (guild_id, board_channel_id) DO UPDATE
+    SET
+      inventory_id = EXCLUDED.inventory_id,
+      message_id = COALESCE(EXCLUDED.message_id, inventory_economy_boards.message_id),
       updated_at = NOW()
     RETURNING board_channel_id, message_id
   `;
@@ -1490,6 +1986,73 @@ function normalizeChange(row) {
     before_quantity: Number(row.before_quantity),
     after_quantity: Number(row.after_quantity),
     version: Number(row.version),
+  };
+}
+
+function normalizeMemberActivitySummary(row) {
+  const totalAdded = Number(row.total_added ?? 0);
+  const totalRemoved = Number(row.total_removed ?? 0);
+
+  return {
+    user_id: row.user_id,
+    item_id: Number(row.item_id),
+    item_name: row.item_name,
+    total_added: totalAdded,
+    total_removed: totalRemoved,
+    net_total: totalAdded - totalRemoved,
+    add_count: Number(row.add_count ?? 0),
+    subtract_count: Number(row.subtract_count ?? 0),
+    last_at: row.last_at,
+  };
+}
+
+function normalizeHistoryReason(row) {
+  return {
+    created_at: row.created_at,
+    user_id: row.user_id,
+    operation: row.operation,
+    item_id: Number(row.item_id),
+    item_name: row.item_name,
+    amount: Number(row.amount ?? 0),
+    reason: row.reason,
+  };
+}
+
+function normalizeEconomyOperation(operation) {
+  const normalized = String(operation ?? "").trim().toLowerCase();
+  if (["venta", "compra"].includes(normalized)) {
+    return normalized;
+  }
+  throw new InventoryError("⚠️ Movimiento de economía no válido. Usa venta o compra.");
+}
+
+function normalizeEconomySummary(row) {
+  const incomeTotal = Number(row.income_total ?? 0);
+  const expenseTotal = Number(row.expense_total ?? 0);
+
+  return {
+    item_id: Number(row.item_id),
+    item_name: row.item_name,
+    sold_quantity: Number(row.sold_quantity ?? 0),
+    bought_quantity: Number(row.bought_quantity ?? 0),
+    income_total: incomeTotal,
+    expense_total: expenseTotal,
+    balance: incomeTotal - expenseTotal,
+    sale_count: Number(row.sale_count ?? 0),
+    purchase_count: Number(row.purchase_count ?? 0),
+  };
+}
+
+function normalizeEconomyEntry(row) {
+  return {
+    created_at: row.created_at,
+    user_id: row.user_id,
+    operation: normalizeEconomyOperation(row.operation),
+    item_id: Number(row.item_id),
+    item_name: row.item_name,
+    quantity: Number(row.quantity),
+    total: Number(row.total),
+    reason: row.reason ?? null,
   };
 }
 

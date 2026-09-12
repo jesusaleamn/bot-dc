@@ -344,6 +344,203 @@ export function buildActivityEmbed(entries) {
   };
 }
 
+export function buildMemberActivityEmbed({ inventory, summaries, recentReasons }) {
+  if (!summaries.length) {
+    return {
+      title: `👥 MIEMBROS — ${inventory.name.trim().toUpperCase()}`,
+      description: "> Todavía no hay sumas ni restas registradas.",
+      color: 0x5865f2,
+      footer: {
+        text: "Actividad vinculada al inventario",
+      },
+    };
+  }
+
+  const fields = buildMemberActivityFields(summaries);
+  const description = [
+    "Resumen por usuario e ID. Neto positivo = aportó más de lo que retiró.",
+    formatRecentReasons(recentReasons),
+  ].filter(Boolean).join("\n\n");
+
+  return {
+    title: `👥 MIEMBROS — ${inventory.name.trim().toUpperCase()}`,
+    description,
+    color: 0x5865f2,
+    fields,
+    footer: {
+      text: `Tabla ${inventory.table_id} · ${summaries.length} filas de actividad`,
+    },
+  };
+}
+
+export function buildMemberActivityPages(view) {
+  if (!view.summaries.length) return [buildMemberActivityEmbed(view)];
+  const users = new Map();
+  for (const row of view.summaries) {
+    const rows = users.get(row.user_id) ?? [];
+    rows.push(row);
+    users.set(row.user_id, rows);
+  }
+  const pages = [];
+  for (const rows of users.values()) {
+    for (let offset = 0; offset < rows.length; offset += 8) {
+      pages.push(buildMemberActivityEmbed({ ...view, summaries: rows.slice(offset, offset + 8), recentReasons: pages.length ? [] : view.recentReasons }));
+    }
+  }
+  return pages.map((page, index) => ({ ...page, title: `${page.title} (${index + 1}/${pages.length})` }));
+}
+
+export function buildEconomyPages(view) {
+  const pages = [];
+  for (let offset = 0; offset < Math.max(1, view.summaries.length); offset += 6) {
+    pages.push(buildEconomyEmbed({ ...view, summaries: view.summaries.slice(offset, offset + 6), recentEntries: offset ? [] : view.recentEntries }));
+  }
+  return pages.map((page, index) => ({ ...page, title: `${page.title} (${index + 1}/${pages.length})` }));
+}
+
+export function buildEconomyEmbed({ inventory, totals, summaries, recentEntries }) {
+  const fields = [
+    {
+      name: "Balance",
+      value: [
+        `Ingresos: \`${formatMoney(totals.incomeTotal)}\``,
+        `Gastos: \`${formatMoney(totals.expenseTotal)}\``,
+        `Neto: \`${formatSignedMoney(totals.balance)}\``,
+      ].join(" · "),
+      inline: false,
+    },
+  ];
+
+  if (summaries.length) {
+    fields.push({
+      name: "Por material",
+      value: formatEconomySummaryTable(summaries),
+      inline: false,
+    });
+  }
+
+  if (recentEntries.length) {
+    fields.push({
+      name: "Últimos movimientos",
+      value: formatRecentEconomyEntries(recentEntries),
+      inline: false,
+    });
+  }
+
+  return {
+    title: `💰 ECONOMÍA — ${inventory.name.trim().toUpperCase()}`,
+    description: summaries.length
+      ? "Ventas y compras vinculadas a IDs del inventario. No modifica el stock automáticamente."
+      : "> Todavía no hay ventas ni compras registradas.",
+    color: totals.balance >= 0 ? 0x2f855a : 0xc53030,
+    fields,
+    footer: {
+      text: `Tabla ${inventory.table_id} · economía vinculada al inventario`,
+    },
+  };
+}
+
+function buildMemberActivityFields(summaries) {
+  const byUser = new Map();
+  for (const summary of summaries) {
+    const entries = byUser.get(summary.user_id) ?? [];
+    entries.push(summary);
+    byUser.set(summary.user_id, entries);
+  }
+
+  return [...byUser.entries()].slice(0, 10).map(([userId, entries]) => ({
+    name: "Miembro",
+    value: `<@${userId}>\n${formatMemberActivityTable(entries)}`,
+    inline: false,
+  }));
+}
+
+function formatMemberActivityTable(entries) {
+  const visibleEntries = entries.slice(0, 8);
+  const lines = [
+    `${"ID".padStart(ITEM_ID_WIDTH)} MATERIAL             ${"+".padStart(6)} ${"-".padStart(6)} ${"NETO".padStart(7)}`,
+    ...visibleEntries.map((entry) => {
+      const material = shorten(entry.item_name, 20);
+      return [
+        String(entry.item_id).padStart(ITEM_ID_WIDTH),
+        material.padEnd(20),
+        String(entry.total_added).padStart(6),
+        String(entry.total_removed).padStart(6),
+        formatSigned(entry.net_total).padStart(7),
+      ].join(" ");
+    }),
+  ];
+
+  if (entries.length > visibleEntries.length) {
+    lines.push(`... y ${entries.length - visibleEntries.length} materiales mas`);
+  }
+
+  return formatPlainCodeBlock(lines);
+}
+
+function formatRecentReasons(entries) {
+  if (!entries.length) {
+    return "";
+  }
+
+  return [
+    "Motivos recientes:",
+    ...entries.slice(0, 5).map((entry) => (
+      `\`${formatShortDate(entry.created_at)}\` <@${entry.user_id}> ${entry.operation} ${entry.item_id} x${entry.amount}: ${shorten(entry.reason, 56)}`
+    )),
+  ].join("\n");
+}
+
+function formatEconomySummaryTable(summaries) {
+  const visibleSummaries = summaries.slice(0, 12);
+  const lines = [
+    `${"ID".padStart(ITEM_ID_WIDTH)} MATERIAL             ${"VEND".padStart(6)} ${"COMP".padStart(6)} ${"NETO".padStart(9)}`,
+    ...visibleSummaries.map((summary) => {
+      const material = shorten(summary.item_name, 20);
+      return [
+        String(summary.item_id).padStart(ITEM_ID_WIDTH),
+        material.padEnd(20),
+        String(summary.sold_quantity).padStart(6),
+        String(summary.bought_quantity).padStart(6),
+        formatSignedMoney(summary.balance).padStart(9),
+      ].join(" ");
+    }),
+  ];
+
+  if (summaries.length > visibleSummaries.length) {
+    lines.push(`... y ${summaries.length - visibleSummaries.length} materiales mas`);
+  }
+
+  return formatPlainCodeBlock(lines);
+}
+
+function formatRecentEconomyEntries(entries) {
+  return entries.slice(0, 4).map((entry) => {
+    const reason = entry.reason ? ` · ${shorten(entry.reason, 42)}` : "";
+    return `\`${formatShortDate(entry.created_at)}\` ${entry.operation} \`${String(entry.item_id).padStart(ITEM_ID_WIDTH)}\` x${entry.quantity} · ${formatMoney(entry.total)} · <@${entry.user_id}>${reason}`;
+  }).join("\n");
+}
+
+function formatPlainCodeBlock(lines) {
+  return `\`\`\`text\n${lines.join("\n")}\n\`\`\``;
+}
+
+function formatMoney(value) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+function formatSignedMoney(value) {
+  return value > 0 ? `+${formatMoney(value)}` : formatMoney(value);
+}
+
+function formatShortDate(value) {
+  if (!value) {
+    return "sin fecha";
+  }
+
+  return new Date(value).toISOString().slice(5, 16).replace("T", " ");
+}
+
 export function buildHelpEmbed() {
   return {
     title: "Comandos del inventario",
@@ -351,8 +548,8 @@ export function buildHelpEmbed() {
     description: [
       "`/inventario nombre:Alquimia` crea el inventario del canal.",
       "`/crear id:1 nombre:Flor de montaña cantidad:50` registra un objeto.",
-      "`/sumar id:2 cantidad:101` suma cantidad. Si omites cantidad, suma 1.",
-      "`/restar id:2 cantidad:101` resta cantidad. Si omites cantidad, resta 1.",
+      "`/sumar id:2 cantidad:101 motivo:Entrega` suma cantidad. Si omites cantidad, suma 1.",
+      "`/restar id:2 cantidad:101 motivo:Retirada` resta cantidad. Si omites cantidad, resta 1.",
       "`/editar id:1 nombre:Nuevo nombre` renombra un objeto.",
       "`/borrar id:1` elimina un objeto. Requiere permisos.",
       "`/ver formato:embed` muestra el inventario bonito solo para ti.",
@@ -369,6 +566,12 @@ export function buildHelpEmbed() {
       "`/pedido_crear id:101 cantidad:120 usuario:@alguien` crea un pedido.",
       "`/pedido_llevar pedido:1 cantidad:20` suma cantidad llevada.",
       "`/actividad` resume sumas y restas por usuario.",
+      "`/miembros` publica la tabla de actividad de miembros.",
+      "`/miembros_vincular canal:#alquimia` vincula este canal/hilo a la actividad de otro inventario.",
+      "`/economia` publica la tabla de economia.",
+      "`/economia_vincular canal:#alquimia` vincula este canal/hilo a la economia de otro inventario.",
+      "`/economia_venta id:1 cantidad:10 total:500 motivo:Venta` registra ingresos.",
+      "`/economia_compra id:1 cantidad:10 total:300 motivo:Compra` registra gastos.",
     ].join("\n"),
   };
 }

@@ -56,6 +56,18 @@ export class OrdersMessageMissingError extends InventoryError {
   }
 }
 
+export class MemberBoardMissingError extends InventoryError {
+  constructor() {
+    super("⚠️ No encuentro la tabla de miembros. Usa `/miembros` para publicarla de nuevo.");
+  }
+}
+
+export class EconomyBoardMissingError extends InventoryError {
+  constructor() {
+    super("⚠️ No encuentro la tabla de economía. Usa `/economia` para publicarla de nuevo.");
+  }
+}
+
 export class OrderNotFoundError extends InventoryError {
   constructor(orderNo) {
     super(`⚠️ No existe ningún pedido activo con número ${orderNo}.`);

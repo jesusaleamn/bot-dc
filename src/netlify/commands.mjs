@@ -27,6 +27,15 @@ const requiredAmountOption = {
   max_value: 2147483647,
 };
 
+const moneyTotalOption = {
+  name: "total",
+  description: "Dinero total ganado o gastado.",
+  type: ApplicationCommandOptionType.INTEGER,
+  required: true,
+  min_value: 0,
+  max_value: 2147483647,
+};
+
 const initialQuantityOption = {
   name: "cantidad",
   description: "Cantidad inicial.",
@@ -43,6 +52,15 @@ const nameOption = {
   required: true,
   min_length: 1,
   max_length: 100,
+};
+
+const optionalReasonOption = {
+  name: "motivo",
+  description: "Motivo opcional del movimiento.",
+  type: ApplicationCommandOptionType.STRING,
+  required: false,
+  min_length: 1,
+  max_length: 200,
 };
 
 const orderNumberOption = {
@@ -153,14 +171,14 @@ export const COMMANDS = [
     description: "Suma cantidad a un objeto del inventario de este canal.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
-    options: [itemIdOption, positiveAmountOption],
+    options: [itemIdOption, positiveAmountOption, optionalReasonOption],
   },
   {
     name: "restar",
     description: "Resta cantidad a un objeto sin permitir valores negativos.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
-    options: [itemIdOption, positiveAmountOption],
+    options: [itemIdOption, positiveAmountOption, optionalReasonOption],
   },
   {
     name: "editar",
@@ -214,14 +232,14 @@ export const COMMANDS = [
     description: "Suma cantidad a una tabla de inventario desde el tablero general.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
-    options: [inventoryTableOption, itemIdOption, requiredAmountOption],
+    options: [inventoryTableOption, itemIdOption, requiredAmountOption, optionalReasonOption],
   },
   {
     name: "general_restar",
     description: "Resta cantidad a una tabla de inventario desde el tablero general.",
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
-    options: [inventoryTableOption, itemIdOption, requiredAmountOption],
+    options: [inventoryTableOption, itemIdOption, requiredAmountOption, optionalReasonOption],
   },
   {
     name: "general_prioridad",
@@ -277,6 +295,46 @@ export const COMMANDS = [
     type: ApplicationCommandType.CHAT_INPUT,
     dm_permission: false,
     options: [optionalUserOption, optionalItemIdOption, optionalLimitOption],
+  },
+  {
+    name: "miembros",
+    description: "Publica o actualiza la tabla de actividad de miembros.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+  },
+  {
+    name: "miembros_vincular",
+    description: "Vincula este canal o hilo a la actividad de un inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [inventoryChannelOption],
+  },
+  {
+    name: "economia",
+    description: "Publica o actualiza la tabla de economia del inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+  },
+  {
+    name: "economia_vincular",
+    description: "Vincula este canal o hilo a la economia de un inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [inventoryChannelOption],
+  },
+  {
+    name: "economia_venta",
+    description: "Registra una venta vinculada a un material del inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [itemIdOption, requiredAmountOption, moneyTotalOption, optionalReasonOption],
+  },
+  {
+    name: "economia_compra",
+    description: "Registra una compra vinculada a un material del inventario.",
+    type: ApplicationCommandType.CHAT_INPUT,
+    dm_permission: false,
+    options: [itemIdOption, requiredAmountOption, moneyTotalOption, optionalReasonOption],
   },
   {
     name: "ayuda",

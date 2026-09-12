@@ -6,16 +6,20 @@ import { httpJson, interactionMessage, pongResponse } from "./responses.mjs";
 import {
   buildActivityEmbed,
   buildCompletedOrdersEmbed,
+  buildEconomyPages,
   buildGeneralInventoryPages,
   buildHelpEmbed,
   buildInventoryPages,
   buildInventoryTextPages,
+  buildMemberActivityPages,
   buildOrdersEmbed,
 } from "./render.mjs";
 import { deleteInventoryMessage, editInventoryMessage, sendInventoryMessage } from "./discord-api.mjs";
 import { scheduleEphemeralResponseDeletion } from "./ephemeral-cleanup.mjs";
 import {
   addQuantity,
+  getActivityBoardPages,
+  setActivityBoardPage,
   completeOrder,
   createInventory,
   createItem,
@@ -25,20 +29,29 @@ import {
   deleteItem,
   deliverOrder,
   editItemName,
+  getEconomyBoardsForInventory,
+  getEconomyView,
   getGeneralBoardMessages,
   getGeneralBoards,
   getGeneralInventoryView,
+  getMemberActivityView,
+  getMemberBoardsForInventory,
   getOrderBoardsForInventory,
   getInventoryByTableId,
   getInventoryMessagePages,
   getOrdersView,
   getInventoryVersion,
   getInventoryView,
+  linkEconomyBoard,
+  linkMemberBoard,
   linkOrdersBoard,
   listActivitySummary,
   listCompletedOrders,
   listHistory,
+  recordEconomyEntry,
+  setEconomyMessageId,
   setGeneralBoardMessageId,
+  setMemberBoardMessageId,
   setOrdersMessageId,
   setInventoryMessagePageId,
   setItemPriority,
@@ -46,6 +59,7 @@ import {
 } from "./database.mjs";
 import {
   BotPermissionError,
+  EconomyBoardMissingError,
   InventoryError,
   InventoryMessageMissingError,
   OrdersMessageMissingError,
@@ -156,6 +170,18 @@ async function handleCommand(interaction) {
       return handleCompletedOrders(context, options);
     case "actividad":
       return handleActivity(context, options);
+    case "miembros":
+      return handleMemberBoard(context);
+    case "miembros_vincular":
+      return handleLinkMemberBoard(context, options);
+    case "economia":
+      return handleEconomyBoard(context);
+    case "economia_vincular":
+      return handleLinkEconomyBoard(context, options);
+    case "economia_venta":
+      return handleEconomyEntry(context, options, "venta");
+    case "economia_compra":
+      return handleEconomyEntry(context, options, "compra");
     case "ayuda":
       return interactionMessage({ embeds: [buildHelpEmbed()] });
     default:
@@ -200,6 +226,7 @@ async function handleAdd(context, options) {
     ...context,
     itemId: options.id,
     amount: options.cantidad ?? 1,
+    reason: options.motivo ?? null,
   });
 
   return refreshThenReply(context, SUCCESS_MESSAGE);
@@ -210,6 +237,7 @@ async function handleSubtract(context, options) {
     ...context,
     itemId: options.id,
     amount: options.cantidad ?? 1,
+    reason: options.motivo ?? null,
   });
 
   return refreshThenReply(context, SUCCESS_MESSAGE);
@@ -302,6 +330,7 @@ async function handleGeneralAdd(context, options) {
     ...inventoryContext,
     itemId: options.id,
     amount: options.cantidad,
+    reason: options.motivo ?? null,
   });
 
   return refreshThenReply(inventoryContext, SUCCESS_MESSAGE);
@@ -313,6 +342,7 @@ async function handleGeneralSubtract(context, options) {
     ...inventoryContext,
     itemId: options.id,
     amount: options.cantidad,
+    reason: options.motivo ?? null,
   });
 
   return refreshThenReply(inventoryContext, SUCCESS_MESSAGE);
@@ -409,6 +439,71 @@ async function handleActivity(context, options) {
   });
 }
 
+async function handleMemberBoard(context) {
+  await publishMemberBoard(context);
+  return temporarySuccessMessage(context);
+}
+
+async function handleLinkMemberBoard(context, options) {
+  try {
+    const view = await linkMemberBoard({
+      ...context,
+      boardChannelId: context.channelId,
+      inventoryChannelId: options.canal,
+    });
+
+    await publishMemberBoard(context, view);
+  } catch (error) {
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}\n\nLa vinculacion se ha guardado, pero no puedo publicar la tabla de miembros hasta que el bot tenga permisos en este canal.`,
+      });
+    }
+    throw error;
+  }
+
+  return temporarySuccessMessage(context);
+}
+
+async function handleEconomyBoard(context) {
+  await publishEconomyBoard(context);
+  return temporarySuccessMessage(context);
+}
+
+async function handleLinkEconomyBoard(context, options) {
+  try {
+    const view = await linkEconomyBoard({
+      ...context,
+      boardChannelId: context.channelId,
+      inventoryChannelId: options.canal,
+    });
+
+    await publishEconomyBoard(context, view);
+  } catch (error) {
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}\n\nLa vinculacion se ha guardado, pero no puedo publicar la tabla de economia hasta que el bot tenga permisos en este canal.`,
+      });
+    }
+    throw error;
+  }
+
+  return temporarySuccessMessage(context);
+}
+
+async function handleEconomyEntry(context, options, operation) {
+  await recordEconomyEntry({
+    ...context,
+    itemId: options.id,
+    quantity: options.cantidad,
+    total: options.total,
+    operation,
+    reason: options.motivo ?? null,
+  });
+
+  return refreshEconomyThenReply(context);
+}
+
 async function refreshThenReply(context, successMessage) {
   let inventoryRefreshError = null;
 
@@ -423,6 +518,7 @@ async function refreshThenReply(context, successMessage) {
   }
 
   await refreshGeneralBoardsBestEffort(context);
+  await refreshMemberBoardsBestEffort(context);
 
   if (inventoryRefreshError instanceof InventoryMessageMissingError) {
     return interactionMessage({
@@ -533,6 +629,151 @@ async function removeExtraGeneralBoardMessages(context, channelId, messages, pag
       throw error;
     }
   }
+}
+
+async function publishMemberBoard(context, currentView = null) {
+  const view = currentView ?? (await getMemberActivityView(context));
+  const messageId = await syncActivityBoard(context, "members", buildMemberActivityPages(view), view.board?.messageId);
+  await setMemberBoardMessageId({
+    ...context,
+    inventoryId: view.inventory.id,
+    messageId,
+  });
+}
+
+async function syncActivityBoard(context, boardType, pages, firstMessageId) {
+  const saved = await getActivityBoardPages({ ...context, boardType });
+  const existing = new Map(saved.map((row) => [Number(row.position), row.message_id]));
+  if (!existing.has(0) && firstMessageId) existing.set(0, firstMessageId);
+  let primaryId;
+  for (const [position, page] of pages.entries()) {
+    let messageId = existing.get(position);
+    if (messageId) {
+      try {
+        await editInventoryMessage(context.channelId, messageId, page);
+      } catch (error) {
+        if (!(error instanceof InventoryMessageMissingError)) throw error;
+        messageId = null;
+      }
+    }
+    if (!messageId) messageId = (await sendInventoryMessage(context.channelId, page)).id;
+    await setActivityBoardPage({ ...context, boardType, position, messageId });
+    if (position === 0) primaryId = messageId;
+  }
+  for (const [position, messageId] of existing) {
+    if (position < pages.length) continue;
+    try {
+      await deleteInventoryMessage(context.channelId, messageId);
+    } catch (error) {
+      if (!(error instanceof InventoryMessageMissingError)) throw error;
+    }
+    await setActivityBoardPage({ ...context, boardType, position, messageId: null });
+  }
+  return primaryId;
+}
+
+async function refreshMemberBoardsBestEffort(context) {
+  try {
+    await refreshMemberBoards(context);
+  } catch (error) {
+    if (error instanceof InventoryError) {
+      console.warn("Member board refresh skipped", context.channelId, error.userMessage);
+      return;
+    }
+    throw error;
+  }
+}
+
+async function refreshMemberBoards(context) {
+  const view = await getInventoryView(context);
+  const boards = await getMemberBoardsForInventory({ inventoryId: view.inventory.id });
+
+  for (const board of boards) {
+    try {
+      const boardView = await getMemberActivityView({
+        guildId: context.guildId,
+        channelId: board.channelId,
+      });
+      await publishMemberBoard({ ...context, channelId: board.channelId }, boardView);
+    } catch (error) {
+      if (error instanceof InventoryError) {
+        console.warn("Member board refresh skipped", board.channelId, error.userMessage);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function refreshEconomyThenReply(context) {
+  try {
+    await refreshEconomyBoards(context);
+    return temporarySuccessMessage(context);
+  } catch (error) {
+    if (error instanceof EconomyBoardMissingError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}`,
+      });
+    }
+    if (error instanceof BotPermissionError) {
+      return interactionMessage({
+        content: `${SUCCESS_MESSAGE}\n\n${error.userMessage}\n\nEl movimiento de economia se ha guardado, pero no puedo actualizar la tabla hasta que el bot tenga permisos en este canal.`,
+      });
+    }
+    throw error;
+  }
+}
+
+async function publishEconomyBoard(context, currentView = null) {
+  const view = currentView ?? (await getEconomyView(context));
+  const messageId = await syncActivityBoard(context, "economy", buildEconomyPages(view), view.board?.messageId);
+  await setEconomyMessageId({
+    ...context,
+    inventoryId: view.inventory.id,
+    messageId,
+  });
+}
+
+async function refreshEconomyBoards(context) {
+  const view = await getEconomyView(context);
+  const boards = await getEconomyBoardsForInventory({ inventoryId: view.inventory.id });
+  if (!boards.length) {
+    throw new EconomyBoardMissingError();
+  }
+
+  let updated = 0;
+  let firstMissingError = null;
+  let firstPermissionError = null;
+
+  for (const board of boards) {
+    try {
+      const boardView = await getEconomyView({
+        guildId: context.guildId,
+        channelId: board.channelId,
+      });
+      await publishEconomyBoard({ ...context, channelId: board.channelId }, boardView);
+      updated += 1;
+    } catch (error) {
+      if (error instanceof InventoryMessageMissingError) {
+        firstMissingError ??= error;
+        continue;
+      }
+      if (error instanceof BotPermissionError) {
+        firstPermissionError ??= error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (updated > 0) {
+    return;
+  }
+
+  if (firstPermissionError) {
+    throw firstPermissionError;
+  }
+  throw firstMissingError ?? new EconomyBoardMissingError();
 }
 
 async function refreshOrdersThenReply(context) {
@@ -768,7 +1009,8 @@ function formatHistory(entries) {
       const stamp = new Date(entry.created_at).toISOString().slice(0, 16).replace("T", " ");
       const item = entry.item_id ? `ID ${entry.item_id}${entry.item_name ? ` · ${entry.item_name}` : ""}` : "Inventario";
       const change = formatChange(entry);
-      return `\`${stamp} UTC\` <@${entry.user_id}> **${entry.operation}** ${item}${change}`;
+      const reason = entry.reason ? ` · Motivo: ${entry.reason}` : "";
+      return `\`${stamp} UTC\` <@${entry.user_id}> **${entry.operation}** ${item}${change}${reason}`;
     })
     .join("\n");
 }

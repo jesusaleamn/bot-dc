@@ -39,6 +39,12 @@ test("registers the expected slash command names", () => {
       "pedido_completar",
       "pedidos_completados",
       "actividad",
+      "miembros",
+      "miembros_vincular",
+      "economia",
+      "economia_vincular",
+      "economia_venta",
+      "economia_compra",
       "ayuda",
     ],
   );
@@ -53,6 +59,11 @@ test("sumar and restar can be used with only id or any positive amount", () => {
     assert.equal(amount.min_value, 1);
     assert.equal(amount.max_value, 2147483647);
     assert.equal("choices" in amount, false);
+
+    const reason = optionByName(command, "motivo");
+    assert.equal(reason.required, false);
+    assert.equal(reason.type, 3);
+    assert.equal(reason.max_length, 200);
   }
 });
 
@@ -68,6 +79,8 @@ test("item ids can use three digits", () => {
     "general_restar",
     "general_prioridad",
     "pedido_crear",
+    "economia_venta",
+    "economia_compra",
   ]) {
     const command = commandByName(commandName);
     const id = optionByName(command, "id");
@@ -113,6 +126,31 @@ test("pedidos_vincular asks for a Discord channel", () => {
 
   assert.equal(channel.required, true);
   assert.equal(channel.type, 7);
+});
+
+test("member and economy boards can link to another inventory channel", () => {
+  for (const commandName of ["miembros_vincular", "economia_vincular"]) {
+    const command = commandByName(commandName);
+    const channel = optionByName(command, "canal");
+
+    assert.equal(channel.required, true);
+    assert.equal(channel.type, 7);
+  }
+});
+
+test("economy entries capture item, quantity, total, and optional reason", () => {
+  for (const commandName of ["economia_venta", "economia_compra"]) {
+    const command = commandByName(commandName);
+    const amount = optionByName(command, "cantidad");
+    const total = optionByName(command, "total");
+    const reason = optionByName(command, "motivo");
+
+    assert.equal(amount.required, true);
+    assert.equal(total.required, true);
+    assert.equal(total.min_value, 0);
+    assert.equal(reason.required, false);
+    assert.equal(reason.max_length, 200);
+  }
 });
 
 test("ver can choose embed or text format", () => {
