@@ -422,12 +422,13 @@ export function buildEconomyPages(view) {
 export function buildEconomyEmbed({ inventory, totals, summaries, recentEntries }) {
   const fields = [
     {
-      name: "Balance",
+      name: "TOTAL DE NETTING",
       value: [
-        `Ingresos: \`${formatMoney(totals.incomeTotal)}\``,
-        `Gastos: \`${formatMoney(totals.expenseTotal)}\``,
-        `Neto: \`${formatSignedMoney(totals.balance)}\``,
-      ].join(" · "),
+        `**${formatSignedMoney(totals.balance)} netting**`,
+        "",
+        `Ingresos acumulados: \`${formatMoney(totals.incomeTotal)}\` netting`,
+        `Gastos acumulados: \`${formatMoney(totals.expenseTotal)}\` netting`,
+      ].join("\n"),
       inline: false,
     },
   ];
@@ -456,7 +457,7 @@ export function buildEconomyEmbed({ inventory, totals, summaries, recentEntries 
     color: totals.balance >= 0 ? 0x2f855a : 0xc53030,
     fields,
     footer: {
-      text: `Tabla ${inventory.table_id} · economía vinculada al inventario`,
+      text: `Tabla ${inventory.table_id} · Saldo de todos los movimientos registrados, partiendo de cero`,
     },
   };
 }

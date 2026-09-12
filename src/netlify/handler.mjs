@@ -734,7 +734,7 @@ async function publishEconomyBoard(context, currentView = null) {
   });
 }
 
-async function refreshEconomyBoards(context) {
+export async function refreshEconomyBoards(context) {
   const view = await getEconomyView(context);
   const boards = await getEconomyBoardsForInventory({ inventoryId: view.inventory.id });
   if (!boards.length) {
