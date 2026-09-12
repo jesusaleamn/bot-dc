@@ -240,9 +240,9 @@ test("buildEconomyEmbed shows sales, purchases, and balance", () => {
   });
 
   assert.equal(embed.title, "💰 ECONOMÍA — ALQUIMIA");
-  assert.equal(embed.fields[0].name, "TOTAL DE NETTING");
+  assert.equal(embed.fields[0].name, "TOTAL DE SEPTIMS");
   assert.match(embed.fields[0].value, /Ingresos acumulados: `1.000`/);
-  assert.match(embed.fields[0].value, /\*\*\+750 netting\*\*/);
+  assert.match(embed.fields[0].value, /\*\*\+750 septims\*\*/);
   assert.match(embed.fields[1].value, /Poción menor/);
   assert.match(embed.fields[2].value, /Pedido de la guardia/);
 });

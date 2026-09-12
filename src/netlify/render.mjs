@@ -422,12 +422,12 @@ export function buildEconomyPages(view) {
 export function buildEconomyEmbed({ inventory, totals, summaries, recentEntries }) {
   const fields = [
     {
-      name: "TOTAL DE NETTING",
+      name: "TOTAL DE SEPTIMS",
       value: [
-        `**${formatSignedMoney(totals.balance)} netting**`,
+        `**${formatSignedMoney(totals.balance)} septims**`,
         "",
-        `Ingresos acumulados: \`${formatMoney(totals.incomeTotal)}\` netting`,
-        `Gastos acumulados: \`${formatMoney(totals.expenseTotal)}\` netting`,
+        `Ingresos acumulados: \`${formatMoney(totals.incomeTotal)}\` septims`,
+        `Gastos acumulados: \`${formatMoney(totals.expenseTotal)}\` septims`,
       ].join("\n"),
       inline: false,
     },
