@@ -382,10 +382,30 @@ export function buildMemberActivityPages(view) {
     users.set(row.user_id, rows);
   }
   const pages = [];
-  for (const rows of users.values()) {
-    for (let offset = 0; offset < rows.length; offset += 8) {
-      pages.push(buildMemberActivityEmbed({ ...view, summaries: rows.slice(offset, offset + 8), recentReasons: pages.length ? [] : view.recentReasons }));
+  for (const [userId, rows] of users) {
+    const prefix = `<@${userId}>\n\n`;
+    let chunk = [];
+    const publish = () => {
+      pages.push({
+        title: `👥 MIEMBROS — ${view.inventory.name.trim().toUpperCase()}`,
+        description: `${prefix}${formatMemberActivityTable(chunk)}`,
+        color: 0x5865f2,
+        footer: { text: `Tabla ${view.inventory.table_id} · ${chunk.length} filas de actividad · Neto = aportado menos retirado` },
+      });
+    };
+    for (const row of rows) {
+      const candidate = [...chunk, row];
+      if (chunk.length && prefix.length + formatMemberActivityTable(candidate).length > 4096) {
+        publish();
+        chunk = [];
+      }
+      chunk.push(row);
     }
+    if (chunk.length) publish();
+  }
+  const reasons = formatRecentReasons(view.recentReasons);
+  if (reasons) {
+    pages.push({ title: `👥 MOTIVOS — ${view.inventory.name.trim().toUpperCase()}`, description: reasons, color: 0x5865f2 });
   }
   return pages.map((page, index) => ({ ...page, title: `${page.title} (${index + 1}/${pages.length})` }));
 }
@@ -456,7 +476,7 @@ function buildMemberActivityFields(summaries) {
 }
 
 function formatMemberActivityTable(entries) {
-  const visibleEntries = entries.slice(0, 8);
+  const visibleEntries = entries;
   const lines = [
     `${"ID".padStart(ITEM_ID_WIDTH)} MATERIAL             ${"+".padStart(6)} ${"-".padStart(6)} ${"NETO".padStart(7)}`,
     ...visibleEntries.map((entry) => {

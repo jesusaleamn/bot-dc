@@ -252,9 +252,22 @@ test("member pages retain every user and material within Discord field limits", 
     item_name: "Material largo", total_added: 100, total_removed: 20, net_total: 80,
   }));
   const pages = buildMemberActivityPages({ inventory: { name: "Alquimia", table_id: 101 }, summaries, recentReasons: [] });
-  const rendered = pages.map((page) => page.fields.map((field) => field.value).join("\n")).join("\n");
+  assert.equal(pages.length, 6);
+  const rendered = pages.map((page) => page.description).join("\n");
   for (const row of summaries) assert.match(rendered, new RegExp(`\\b${row.item_id} Material`));
-  for (const page of pages) for (const field of page.fields) assert.ok(field.value.length <= 1024);
+  for (const page of pages) assert.ok(page.description.length <= 4096);
+});
+
+test("member pages split only at the description limit without losing rows", () => {
+  const summaries = Array.from({ length: 200 }, (_, index) => ({
+    user_id: "123", item_id: index + 1, item_name: "Material largo",
+    total_added: 100, total_removed: 20, net_total: 80,
+  }));
+  const pages = buildMemberActivityPages({ inventory: { name: "Alquimia", table_id: 101 }, summaries, recentReasons: [] });
+  assert.ok(pages.length > 1);
+  const rendered = pages.map((page) => page.description).join("\n");
+  for (const row of summaries) assert.match(rendered, new RegExp(`\\b${row.item_id} Material`));
+  for (const page of pages) assert.ok(page.description.length <= 4096);
 });
 
 test("economy pages retain all materials with large totals within Discord limits", () => {
